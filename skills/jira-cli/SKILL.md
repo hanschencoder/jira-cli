@@ -216,6 +216,9 @@ jira-cli issue download ABC-123 --dir /tmp/logs -o yaml
 
 # 忽略本地缓存强制重下
 jira-cli issue download ABC-123 --force -o yaml
+
+# 确认下载超过体积上限的附件
+jira-cli issue download ABC-123 -y -o yaml
 ```
 
 `--match` 与 `--id` 可叠加。输出：
@@ -272,20 +275,47 @@ files:
 
 无论落在哪，都用输出里的 `dir` 和 `files[].path`（都是绝对路径）去读文件，别自己拼。
 
-### 7.4 铁律：不要试图用 URL 下载
+### 7.4 体积闸门：超过 200 MB 会拒绝执行
+
+本次**实际要走网络**的字节数超过 200 MB 时，命令直接报错退出（退出码 1，stdout 无输出），并列出清单：
+
+```
+错误：本次需要下载 2.0 GB，超过上限 200 MB
+
+本次要下载的附件（大的在前）：
+    500.0 MB  log.7z.001  (id=5966700)
+    500.0 MB  log.7z.002  (id=5966701)
+      3.5 MB  20260811-140336.mp4  (id=5966725)
+
+三种处理方式：
+  1. 缩小范围：jira-cli issue download ABC-123 --match '*.log'
+  2. 只要某个：jira-cli issue download ABC-123 --id <上面的 id>
+  3. 确实都要：jira-cli issue download ABC-123 -y
+```
+
+这个闸门是必要的：生产 issue 上挂几 GB 附件很常见（实测见过单条 issue 6 个分卷合计 **2.54 GB**、另一条挂 **132 个**附件）。
+
+要点：
+
+- **只统计真正要下载的部分**。已命中缓存的文件不计入，所以对同一 issue 重复跑不会突然被拦。
+- `-y` / `--yes` 确认放行。
+- 上限可调：`jira-cli config set download-limit-mb 500`，**设 0 关闭**。
+- **优先用 `--match` / `--id` 缩小范围，而不是无脑加 `-y`**。用户多半只需要日志，不需要那几个 500 MB 的视频分卷。
+
+### 7.5 铁律：不要试图用 URL 下载
 
 `attachments` 的输出里**故意不含下载链接**。Jira Server 的附件地址必须带 `Authorization: Bearer` 头才能取，浏览器能下是因为有 session cookie。
 
 所以：**不要去 `issue show --raw` 里翻 `content` 字段然后 `curl` 或 WebFetch**——只会拿到 401 或登录页，白白浪费一轮。附件只能通过 `issue download` 拿。
 
-### 7.5 拿到文件之后
+### 7.6 拿到文件之后
 
 - 文本 / 日志：直接 Read；**超过几 MB 先 `grep -n` 定位行号再局部读**，别整个塞进上下文
 - 图片：Read 可以直接看
 - 压缩包：先 `unzip -l` / `7z l` 看清单，再解需要的那部分
-- 落点见 7.3——默认在固定的缓存目录，不跟当前目录走
+- 落点见 7.3——默认在固定的缓存目录，不跟当前目录走；体积上限见 7.4
 
-### 7.6 上传附件
+### 7.7 上传附件
 
 ```bash
 jira-cli issue update ABC-123 --attach ./report.html --attach ./screenshot.png

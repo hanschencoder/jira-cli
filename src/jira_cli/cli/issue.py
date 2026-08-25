@@ -458,6 +458,7 @@ def download_cmd(
     match: Optional[str] = typer.Option(None, "--match", help="按文件名 glob 过滤，如 '*.log'"),
     directory: Optional[Path] = typer.Option(None, "--dir", help="下载目录，默认 <缓存目录>/attachments/<KEY>/"),
     force: bool = typer.Option(False, "--force", help="忽略本地缓存，强制重新下载"),
+    yes: bool = typer.Option(False, "-y", "--yes", help="确认下载超过体积上限的附件"),
     fmt: str = FORMAT_OPTION,
 ) -> None:
     """下载附件到本地，输出本地绝对路径清单。
@@ -467,6 +468,9 @@ def download_cmd(
     已经下过的文件（同路径且大小一致）默认跳过，输出里标 `cached: true`；
     要重下加 --force。附件在 Jira 里是不可变的（改内容只能删了重传，会得到
     新 id），所以「路径存在 + 大小一致」足以判定是同一个文件。
+
+    本次实际要拉的字节数超过上限（默认 200 MB）时会拒绝执行并列出清单，
+    需显式加 -y/--yes，或用 --match / --id 缩小范围。
     """
     c = get_ctx(ctx)
     raw = c.backend.get_issue(key, fields=["attachment"])
@@ -489,18 +493,34 @@ def download_cmd(
     # 这样加不加 --match 得到的路径一致，缓存才命中得上
     names = _dest_names(all_attachments)
 
-    files = []
-    fetched = reused = 0
+    # 先分出「要拉的」和「能复用的」，再决定放不放行——体积闸门只该拦真正
+    # 要走网络的部分，全部命中缓存时不该被拦
+    plan = []
     for att in selected:
         dest = target_dir / names[str(att["id"])]
         size = att.get("size") or 0
-        if not force and dest.exists() and dest.stat().st_size == size:
+        cached = (
+            not force and dest.exists() and dest.stat().st_size == size
+        )
+        plan.append((att, dest, size, cached))
+
+    pending = [item for item in plan if not item[3]]
+    pending_bytes = sum(item[2] for item in pending)
+    limit = c.config.download_limit_mb * 1024 * 1024
+    if pending and limit > 0 and pending_bytes > limit and not yes:
+        raise JiraCliError(
+            f"本次需要下载 {_human_size(pending_bytes)}，超过上限 {c.config.download_limit_mb} MB",
+            _oversize_hint(key, pending, c.config.download_limit_mb),
+        )
+
+    files = []
+    fetched = reused = 0
+    for att, dest, size, cached in plan:
+        if cached:
             reused += 1
-            cached = True
         else:
             size = c.backend.download_attachment(att["content"], dest)
             fetched += 1
-            cached = False
         files.append(
             {
                 "id": att.get("id"),
@@ -527,6 +547,31 @@ def download_cmd(
         fmt,
         rows=files,
     )
+
+
+def _human_size(size: int) -> str:
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{size} B"
+
+
+def _oversize_hint(key: str, pending: list, limit_mb: int) -> str:
+    """超限时把清单摊开，让调用方能直接决定怎么缩小范围。"""
+    lines = ["本次要下载的附件（大的在前）："]
+    for att, _dest, size, _cached in sorted(pending, key=lambda i: i[2], reverse=True)[:15]:
+        lines.append(f"  {_human_size(size):>10}  {att.get('filename')}  (id={att.get('id')})")
+    if len(pending) > 15:
+        lines.append(f"  … 另有 {len(pending) - 15} 个")
+    lines.append("")
+    lines.append("三种处理方式：")
+    lines.append(f"  1. 缩小范围：jira-cli issue download {key} --match '*.log'")
+    lines.append(f"  2. 只要某个：jira-cli issue download {key} --id <上面的 id>")
+    lines.append(f"  3. 确实都要：jira-cli issue download {key} -y")
+    lines.append(f"（上限可改：jira-cli config set download-limit-mb <数字>，设 0 关闭）")
+    return "\n".join(lines)
 
 
 def _download_dir(c: Any, key: str, directory: Optional[Path]) -> Path:

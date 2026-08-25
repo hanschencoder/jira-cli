@@ -33,6 +33,7 @@ ENV_OVERRIDES = {
     "default_project": "JIRA_PROJECT",
     "timezone": "JIRA_TZ",
     "download_dir": "JIRA_DOWNLOAD_DIR",
+    "download_limit_mb": "JIRA_DOWNLOAD_LIMIT_MB",
 }
 
 
@@ -89,6 +90,8 @@ class Config:
     timezone: str = "+08:00"
     #: 附件默认落点根目录。留空则用 default_download_dir()
     download_dir: str = ""
+    #: 单次下载的体积上限（MB），超过需显式 -y 确认。设 0 关闭
+    download_limit_mb: int = 200
     #: 跳过 TLS 校验
     insecure: bool = False
 
@@ -122,6 +125,7 @@ class Config:
 
 _FIELD_NAMES = {f.name for f in dc_fields(Config)}
 _BOOL_FIELDS = {f.name for f in dc_fields(Config) if f.type is bool or f.type == "bool"}
+_INT_FIELDS = {f.name for f in dc_fields(Config) if f.type is int or f.type == "int"}
 
 
 def load_file() -> dict[str, object]:
@@ -174,6 +178,15 @@ def load(**overrides: object) -> Config:
     for key in _BOOL_FIELDS:
         if key in data and isinstance(data[key], str):
             data[key] = data[key].strip().lower() in ("1", "true", "yes", "on")
+
+    for key in _INT_FIELDS:
+        if key in data and not isinstance(data[key], int):
+            try:
+                data[key] = int(str(data[key]).strip())
+            except ValueError:
+                raise ConfigError(
+                    f"配置项 {key.replace('_', '-')} 需要整数，收到：{data[key]!r}"
+                ) from None
 
     return Config(**data)  # type: ignore[arg-type]
 

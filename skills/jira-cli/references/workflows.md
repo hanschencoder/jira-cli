@@ -22,7 +22,7 @@ grep -n "FATAL\|Exception" ./logs/*.log | head -50
 
 ### 附件排查的三条纪律
 
-1. **先 `attachments` 看 `size` 再 `download`。** 生产 issue 上几百 MB 的日志包很常见（实测见过 523 MB 的 `.7z`），无脑全下会卡很久。
+1. **先 `attachments` 看 `size` 再 `download`。** 生产 issue 上几 GB 附件很常见（实测见过单条 issue 合计 2.54 GB、另一条挂 132 个附件）。超过 200 MB 时 `download` 会拒绝执行并列出清单——**这时应该用 `--match` / `--id` 缩小范围，而不是直接加 `-y`**。用户通常只要日志，不要那些 500 MB 的视频分卷。
 2. **大文件先 `grep -n` 定位再局部读**，不要整个文件塞进上下文。
 3. **绝不要拿 URL 去 curl / WebFetch。** Jira 附件必须带认证头，裸链接只会得到 401 或登录页。只能用 `issue download`。
 

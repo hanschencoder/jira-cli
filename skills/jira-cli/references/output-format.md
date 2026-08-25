@@ -137,6 +137,7 @@
 - `downloaded` 是本次**新下载**的数量，`cached` 是复用本地缓存的数量，`total_size` 是本次全部文件的字节合计。每个文件还有 `cached: true/false`。
 - 同一 issue 上**允许存在同名附件**，这种情况下落盘名会插入 id 区分：`log.6056658.txt` / `log.6056751.txt`。
 - 无匹配时返回 `downloaded: 0`、`cached: 0`、`files: []`，且**不带 `dir`**，退出码仍为 0。
+- 本次要下载的字节数超过上限（默认 200 MB，只算未命中缓存的部分）时**不下载**，报错退出（退出码 1，stdout 无输出），stderr 列出清单和缩小范围的办法。加 `-y` 放行。
 
 ## issue create
 

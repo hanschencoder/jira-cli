@@ -57,6 +57,7 @@ export JIRA_CLI_CONFIG_DIR=/tmp/jiratest && uv run jira-cli meta whoami -o yaml
 - **输出必须省 token**：`/search` 带 `fields=` 白名单从源头裁剪；输出展平嵌套对象、剔除 `null` 和 `self`/`avatarUrls`/`iconUrl` 等内部 URL；`issue show` 默认精简，`--comments`/`--history`/`--links`/`--subtasks` 按需叠加
 - **附件必须落盘**：Jira Server 的附件 `content` URL 要带认证头，AI 拿裸链接下不动。下载后输出**本地绝对路径**清单
 - **附件默认落在缓存目录**（`platformdirs.user_cache_dir`）而非当前工作目录，否则在用户代码仓库里跑就把日志截图撒进去了。下载前按「同路径 + 大小一致」判缓存命中——Jira 的附件不可变（改内容只能删了重传并得到新 id），所以这个判据足够
+- **附件有体积闸门**：单次实际要走网络的字节数超过 `download_limit_mb`（默认 200）时拒绝执行并列出清单。闸门**只统计未命中缓存的部分**，否则重复跑同一个 issue 会莫名被拦。实测该实例上单条 issue 附件合计 2.54 GB、另一条挂 132 个附件，不设闸门会毫无预警地拖满带宽
 - **同一 issue 允许挂同名附件**（实测两个 `same-name.txt`，id 与大小均不同）。落盘名必须按**全部附件**判重后插 id 区分，不能只看本次筛选的子集，否则加不加 `--match` 得到的路径不一致、缓存命不中。不做区分会互相覆盖：报告下载 N 个，磁盘上只有 1 个
 - **本机 shell 是 zsh，未加引号的变量不做 word splitting**。冒烟脚本里写 `for c in "meta whoami" ...; do jira-cli $c; done` 会把整串当成**一个**参数传进去，命令全部失败而看起来像代码坏了。要循环测多个子命令，用数组或直接写全字面量
 - `config.toml` 含 PAT，权限 600，已在 `.gitignore`；测试务必用 `JIRA_CLI_CONFIG_DIR` 隔离
