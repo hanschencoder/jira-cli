@@ -39,6 +39,7 @@ export JIRA_CLI_CONFIG_DIR=/tmp/jiratest && uv run jira-cli meta whoami -o yaml
 - **不做批量写**：`issue update` / `transition` / `comment` 只接受单个 issue key。**不做 dry-run**。护栏只有写操作留痕
 - **不做统计（stats）、不做敏捷（board/sprint/epic）**
 - **Jira 不能直接「设置状态」**，必须走 transition。`issue transition <KEY> <状态名>` 按名称模糊匹配 transition id；匹配失败或缺必填字段时，错误信息必须**列出当前可用的全部 transition 及其必填字段和可选值**——让 AI 一轮自我纠正，别只报「失败」
+- **流转带评论必须单独发一次评论请求**，不要塞进 transition 的 `update.comment`。实测：该 transition 的界面若没配「评论」字段，Jira **返回成功但静默丢弃评论**，不报任何错。静默失败对调用方最致命，宁可多一次请求
 - **md→wiki 绝不用正则替换**。必须走 Markdown AST + renderer。正则会在嵌套列表、表格内联代码、元字符转义上翻车。参考 `ankitpokhrel/jira-cli` 源码注释：`'*' can be either be bold or an unordered list`
 - **正文中的 wiki 元字符（`{} [] | * _ - + ^ ~`）必须转义**，否则 AI 写的普通文本会被误解析成标记
 - 转换器有逃生舱：`--description-raw` / `--body-raw` 直接提交 wiki 原文

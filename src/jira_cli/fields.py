@@ -135,13 +135,17 @@ def attachment_row(att: dict) -> dict:
 
 
 def comment_row(comment: dict, codec: Any) -> dict:
-    return {
-        "id": comment.get("id"),
-        "author": user_name(comment.get("author")),
-        "created": comment.get("created"),
-        "updated": comment.get("updated") if comment.get("updated") != comment.get("created") else None,
-        "body": codec.from_jira(comment.get("body") or ""),
-    }
+    # updated 与 created 相同说明没编辑过，这种情况不输出该字段
+    updated = comment.get("updated")
+    return prune(
+        {
+            "id": comment.get("id"),
+            "author": user_name(comment.get("author")),
+            "created": comment.get("created"),
+            "updated": updated if updated != comment.get("created") else None,
+            "body": codec.from_jira(comment.get("body") or ""),
+        }
+    )
 
 
 def detail_issue(

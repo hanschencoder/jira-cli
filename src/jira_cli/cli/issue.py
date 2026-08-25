@@ -23,6 +23,7 @@ from ..fields import (
     comment_row,
     detail_issue,
     issue_links,
+    prune,
     summarize_issue,
 )
 from ..jql import JQL, normalize_user
@@ -237,7 +238,7 @@ def create_cmd(
     attached = _attach(c, key, list(attach or [])) if attach else []
     writelog.record("create", key, payload, ok=True, result={"key": key})
 
-    emit({"key": key, "url": c.issue_url(key), "attached": attached or None}, fmt if fmt != "table" else "yaml")
+    emit(prune({"key": key, "url": c.issue_url(key), "attached": attached or None}), fmt if fmt != "table" else "yaml")
 
 
 @app.command("update")
@@ -288,7 +289,14 @@ def update_cmd(
         writelog.record("attach", key, {"files": [str(p) for p in attach]}, ok=True)
 
     emit(
-        {"key": key, "updated": sorted(payload_fields), "attached": attached or None, "url": c.issue_url(key)},
+        prune(
+            {
+                "key": key,
+                "updated": sorted(payload_fields) or None,
+                "attached": attached or None,
+                "url": c.issue_url(key),
+            }
+        ),
         fmt if fmt != "table" else "yaml",
     )
 
@@ -311,7 +319,7 @@ def comment_cmd(
         raise
     writelog.record("comment", key, {"body": text}, ok=True, result={"id": created.get("id")})
     emit(
-        {"key": key, "comment_id": created.get("id"), "url": c.issue_url(key)},
+        prune({"key": key, "comment_id": created.get("id"), "url": c.issue_url(key)}),
         fmt if fmt != "table" else "yaml",
     )
 
@@ -343,8 +351,6 @@ def transition_cmd(
     extra = _resolve_fields(c, list(field or []))
     if extra:
         payload["fields"] = extra
-    if comment:
-        payload["update"] = {"comment": [{"add": {"body": c.codec.to_jira(comment)}}]}
 
     try:
         c.backend.do_transition(key, payload)
@@ -354,13 +360,26 @@ def transition_cmd(
         raise
     writelog.record("transition", key, payload, ok=True, result={"to": target.get("to", {}).get("name")})
 
+    # 评论单独发一次请求，不塞进 transition 的 update.comment。
+    # 实测：transition 界面若没配「评论」字段，Jira 会静默丢弃 update.comment
+    # ——返回成功但评论根本没写入。静默失败对调用方最致命，宁可多一次请求。
+    comment_id = None
+    if comment:
+        body = c.codec.to_jira(comment)
+        created = c.backend.add_comment(key, body)
+        comment_id = created.get("id")
+        writelog.record("comment", key, {"body": body}, ok=True, result={"id": comment_id})
+
     emit(
-        {
-            "key": key,
-            "transition": target.get("name"),
-            "status": (target.get("to") or {}).get("name"),
-            "url": c.issue_url(key),
-        },
+        prune(
+            {
+                "key": key,
+                "transition": target.get("name"),
+                "status": (target.get("to") or {}).get("name"),
+                "comment_id": comment_id,
+                "url": c.issue_url(key),
+            }
+        ),
         fmt if fmt != "table" else "yaml",
     )
 
