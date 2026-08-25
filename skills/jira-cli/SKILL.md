@@ -171,17 +171,88 @@ jira-cli issue create \
 
 给用户展示命令模板时，占位符要用明显非法的写法（如 `『在这里填』`），防止被整段复制执行。
 
-## 7. 附件
+## 7. 附件（两步：先看清单，再下载）
+
+`attachments` 只列清单不下载，`download` 才落盘。**永远先跑 `attachments`。**
+
+### 7.1 第一步：看清单
 
 ```bash
-jira-cli issue attachments ABC-1 -o yaml          # 先看清单（文件名 / 大小 / 类型）
-jira-cli issue download ABC-1                     # 全下，落到 ./jira-attachments/ABC-1/
-jira-cli issue download ABC-1 --match '*.log'     # 按文件名 glob 过滤
-jira-cli issue download ABC-1 --id 12345          # 只下指定 id
-jira-cli issue download ABC-1 --dir ./logs        # 指定目录
+jira-cli issue attachments ABC-123 -o yaml
 ```
 
-下载后输出的是**本地绝对路径**，直接拿去 Read / grep。大文件先看 `attachments` 里的 `size`，别盲目全下。
+```yaml
+issue: ABC-123
+total: 2
+attachments:
+- id: '6055369'          # download --id 用这个
+  filename: data.csv
+  size: 14               # 字节。决定要不要下的关键
+  mime: text/csv
+  author: zhang.san
+  created: '2026-08-25 14:42:38.000'
+- id: '6055368'
+  filename: smoke.log
+  size: 55
+  mime: text/plain
+```
+
+**这一步的意义是看 `size`。** 生产 issue 上挂几百 MB 的日志包很常见（实测见过单个附件 523 MB 的 `.7z`）。不看大小直接全下会拖垮磁盘和时间。
+
+### 7.2 第二步：下载
+
+```bash
+# 全下，落到当前目录下的 ./jira-attachments/ABC-123/
+jira-cli issue download ABC-123 -o yaml
+
+# 按文件名 glob 过滤——排查日志时最常用
+jira-cli issue download ABC-123 --match '*.log' -o yaml
+
+# 按 id 精确要某一个（id 来自第一步的清单）
+jira-cli issue download ABC-123 --id 6055369 -o yaml
+
+# 指定目录（平铺放置，不再套 jira-attachments/<KEY>/ 那层）
+jira-cli issue download ABC-123 --dir ./logs -o yaml
+```
+
+`--match` 与 `--id` 可叠加。输出：
+
+```yaml
+issue: ABC-123
+dir: /abs/path/jira-attachments/ABC-123
+downloaded: 2
+files:
+- id: '6055369'
+  filename: data.csv
+  path: /abs/path/jira-attachments/ABC-123/data.csv   # 本地绝对路径
+  size: 14
+  mime: text/csv
+```
+
+`path` 是**本地绝对路径**，直接拿去 Read / grep，不需要再拼。
+
+没有匹配时**不报错**，正常返回 `downloaded: 0` 且 `files: []`，stderr 提示「没有匹配的附件」——脚本里不会因为空结果中断。
+
+### 7.3 铁律：不要试图用 URL 下载
+
+`attachments` 的输出里**故意不含下载链接**。Jira Server 的附件地址必须带 `Authorization: Bearer` 头才能取，浏览器能下是因为有 session cookie。
+
+所以：**不要去 `issue show --raw` 里翻 `content` 字段然后 `curl` 或 WebFetch**——只会拿到 401 或登录页，白白浪费一轮。附件只能通过 `issue download` 拿。
+
+### 7.4 拿到文件之后
+
+- 文本 / 日志：直接 Read；**超过几 MB 先 `grep -n` 定位行号再局部读**，别整个塞进上下文
+- 图片：Read 可以直接看
+- 压缩包：先 `unzip -l` / `7z l` 看清单，再解需要的那部分
+- 下载目录默认在**当前工作目录**下，跑命令前先确认自己在哪，别把文件撒到用户的代码仓库里
+
+### 7.5 上传附件
+
+```bash
+jira-cli issue update ABC-123 --attach ./report.html --attach ./screenshot.png
+```
+
+`--attach` 可多次传。注意 **`-a` 是 `--assignee` 的短参**，不是附件。
 
 ## 8. 正文格式
 

@@ -2,23 +2,48 @@
 
 每条都是「先查清楚 → 确认 → 再动手」。写操作不可批量、不可撤销，多查一次永远比改错一条便宜。
 
-## 1. 分析一个 issue 的根因
+## 1. 分析一个 issue 的根因（含附件排查）
 
 ```bash
 # 1. 拿全貌：详情 + 评论 + 变更历史
 jira-cli issue show ABC-123 --comments --history -o yaml
 
-# 2. 看有没有附件（日志 / 截图 / trace）
+# 2. 看有没有附件，重点看 size
 jira-cli issue attachments ABC-123 -o yaml
 
-# 3. 挑需要的下载。先看 size，别盲目全下
-jira-cli issue download ABC-123 --match '*.log' --dir ./logs
+# 3. 挑需要的下载
+jira-cli issue download ABC-123 --match '*.log' --dir ./logs -o yaml
 
-# 4. 下载输出里的 path 是本地绝对路径，直接读
-#    大文件先 grep 定位再局部读
+# 4. 用输出里的 path（绝对路径）读文件
+grep -n "FATAL\|Exception" ./logs/*.log | head -50
 ```
 
 拿到 `description`（已是 Markdown）后再结合代码仓库定位。**历史（`--history`）常常比描述更有信息量**——能看出它被打回过几次、在谁手上停留最久。
+
+### 附件排查的三条纪律
+
+1. **先 `attachments` 看 `size` 再 `download`。** 生产 issue 上几百 MB 的日志包很常见（实测见过 523 MB 的 `.7z`），无脑全下会卡很久。
+2. **大文件先 `grep -n` 定位再局部读**，不要整个文件塞进上下文。
+3. **绝不要拿 URL 去 curl / WebFetch。** Jira 附件必须带认证头，裸链接只会得到 401 或登录页。只能用 `issue download`。
+
+### 按类型处理下载到的文件
+
+| 类型 | 做法 |
+|---|---|
+| 日志 / 文本 | 小的直接 Read；大的先 `grep -n` 定位行号再按行区间读 |
+| 图片 / 截图 | Read 可直接查看 |
+| 压缩包 | 先 `unzip -l` / `7z l` 看清单，只解需要的部分 |
+| trace / 性能数据 | 先确认体积，必要时用专门工具而不是直接读 |
+
+下载目录默认是**当前工作目录**下的 `./jira-attachments/<KEY>/`。跑命令前确认自己在哪，别把附件撒进用户的代码仓库；不确定就显式 `--dir /tmp/xxx`。
+
+### 分析完回写附件
+
+```bash
+jira-cli issue update ABC-123 --attach ./analysis.md --attach ./flamegraph.svg
+```
+
+`--attach` 可多次传。**`-a` 是 `--assignee` 的短参，不是附件。**
 
 ## 2. 查一批 issue 并归类
 
