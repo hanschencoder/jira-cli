@@ -49,5 +49,6 @@ export JIRA_CLI_CONFIG_DIR=/tmp/jiratest && uv run jira-cli meta whoami -o yaml
 - **用户身份模型**：Server 用 `user.name`（登录名，如 `zhang.san`），Cloud 用 `user.accountId`。写 `Backend` 抽象时这是真正的语义差异，不是换个端点
 - **输出必须省 token**：`/search` 带 `fields=` 白名单从源头裁剪；输出展平嵌套对象、剔除 `null` 和 `self`/`avatarUrls`/`iconUrl` 等内部 URL；`issue show` 默认精简，`--comments`/`--history`/`--links`/`--subtasks` 按需叠加
 - **附件必须落盘**：Jira Server 的附件 `content` URL 要带认证头，AI 拿裸链接下不动。下载后输出**本地绝对路径**清单
+- **本机 shell 是 zsh，未加引号的变量不做 word splitting**。冒烟脚本里写 `for c in "meta whoami" ...; do jira-cli $c; done` 会把整串当成**一个**参数传进去，命令全部失败而看起来像代码坏了。要循环测多个子命令，用数组或直接写全字面量
 - `config.toml` 含 PAT，权限 600，已在 `.gitignore`；测试务必用 `JIRA_CLI_CONFIG_DIR` 隔离
 - `comment` 字段的渲染器未实测确认（采样到的评论都是纯文本无从判别），按 wiki 处理，由 `config init` 运行时探测兜底
