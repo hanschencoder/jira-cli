@@ -89,6 +89,7 @@ jira-cli issue list --jql 'labels = urgent AND sprint in openSprints()' -o yaml
 # 详情：默认精简，按需叠加
 jira-cli issue show ABC-123 -o yaml
 jira-cli issue show ABC-123 --comments --history -o yaml
+jira-cli issue show ABC-123 --custom             # 自定义字段（多是模板默认值，很占 token）
 jira-cli issue show ABC-123 --raw            # 原始 JSON 逃生舱
 
 # 创建（描述写 Markdown，自动转 wiki markup）

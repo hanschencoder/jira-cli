@@ -72,6 +72,7 @@ jira-cli issue show ABC-1 -o json | jq -r '.description'
 | 复杂条件（降级到 JQL） | `jira-cli issue list --jql 'labels = urgent AND sprint in openSprints()' -o yaml` |
 | 看 issue 详情 | `jira-cli issue show ABC-1 -o yaml` |
 | 详情 + 评论 + 历史 | `jira-cli issue show ABC-1 --comments --history -o yaml` |
+| 详情 + 自定义字段 | `jira-cli issue show ABC-1 --custom -o yaml` |
 | 只要某几个字段 | `jira-cli issue show ABC-1 --fields status,assignee -o yaml` |
 | 原始 JSON 逃生舱 | `jira-cli issue show ABC-1 --raw -o json` |
 | 加评论 | `jira-cli issue comment ABC-1 '已定位：**线程竞争**'` |

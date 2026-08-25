@@ -133,6 +133,7 @@ def show_cmd(
     history: bool = typer.Option(False, "--history", help="附上变更历史"),
     links: bool = typer.Option(False, "--links", help="附上关联 issue"),
     subtasks: bool = typer.Option(False, "--subtasks", help="附上子任务"),
+    custom: bool = typer.Option(False, "--custom", help="附上自定义字段（多数是未填写的模板默认值，很占 token）"),
     only: Optional[str] = typer.Option(None, "--fields", help="只要这些字段，逗号分隔"),
     raw: bool = typer.Option(False, "--raw", help="原始 JSON 逃生舱，不做任何裁剪"),
     fmt: str = FORMAT_OPTION,
@@ -145,12 +146,16 @@ def show_cmd(
         return
 
     expand = ["changelog"] if history else None
-    wanted = list(SHOW_FIELDS)
     if only:
         wanted = [f.strip() for f in only.split(",") if f.strip()]
-    detail_raw = c.backend.get_issue(key, fields=wanted + ["*navigable"] if only else None, expand=expand)
+    elif custom:
+        # 自定义字段没法按名字点名要，只能全量拉回来再筛
+        wanted = None
+    else:
+        wanted = list(SHOW_FIELDS)
+    detail_raw = c.backend.get_issue(key, fields=wanted, expand=expand)
 
-    data = detail_issue(detail_raw, c.codec, c.field_map)
+    data = detail_issue(detail_raw, c.codec, c.field_map, with_custom=custom)
     data["url"] = c.issue_url(key)
 
     if only:

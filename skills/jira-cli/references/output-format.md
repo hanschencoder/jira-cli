@@ -64,9 +64,10 @@
 ```
 
 - `description` 已转成 **Markdown**。
-- `custom_fields` 的键是字段**显示名**（已从 `customfield_10001` 翻译过来），可直接用于 `-f 显示名=值`。
+- **`custom_fields` 默认不输出**，要加 `--custom`。原因：一条 issue 常挂几十个自定义字段，其中绝大多数是建单时预填的**模板占位符**（如 `【前提条件】：`、`Please fill in the template below.`）而不是有人真填的内容——别把它们当成 issue 的实际内容读。加了 `--custom` 后，键是字段**显示名**（已从 `customfield_10001` 翻译过来），可直接用于 `-f 显示名=值`。
+- 注意区分：**`description` 才是 issue 的正文**。有些实例还存在一个名叫「描述」的**自定义字段**，那是另一回事，且往往只是模板。
 - `assignee` 是登录名（写操作用它），`assignee_display` 是显示名（给人看）。
-- 加 `--comments` 多出 `comments` 数组，`--history` 多出 `history`，`--links` 多出 `links`，`--subtasks` 多出 `subtasks`。
+- 加 `--comments` 多出 `comments` 数组，`--history` 多出 `history`，`--links` 多出 `links`，`--subtasks` 多出 `subtasks`，`--custom` 多出 `custom_fields`。
 - `--raw` 返回未经任何裁剪的 Jira 原始 JSON（单个 issue 常 50 KB 以上，慎用）。
 
 ### comments

@@ -152,6 +152,7 @@ def detail_issue(
     raw: dict,
     codec: Any,
     field_map: dict[str, str] | None = None,
+    with_custom: bool = False,
 ) -> dict:
     """issue show 的核心视图（不含评论/历史，那些由调用方按需叠加）。"""
     f = raw.get("fields") or {}
@@ -194,26 +195,37 @@ def detail_issue(
     if attachments:
         detail["attachments"] = [attachment_row(a) for a in attachments]
 
-    customs = custom_fields(f, field_map or {})
-    if customs:
-        detail["custom_fields"] = customs
+    if with_custom:
+        customs = custom_fields(f, field_map or {})
+        if customs:
+            detail["custom_fields"] = customs
 
     return prune(detail)
+
+
+#: 永远没有阅读价值的自定义字段：内部排序串、插件塞进来的 Java 对象 toString
+CUSTOM_FIELD_NOISE = frozenset({"Rank", "Development"})
 
 
 def custom_fields(fields: dict, field_map: dict[str, str]) -> dict:
     """把 customfield_10001 这种 id 翻译成人类可读的字段名。
 
     不翻译的话 AI 完全看不懂这些字段是什么。
+
+    注意：这里返回的多数字段是**未填写的模板默认值**（Jira 建单时预填的
+    「【前提条件】：」之类），不是有人写的内容。所以默认不输出，由
+    `issue show --custom` 显式索取。
     """
     out: dict[str, Any] = {}
     for key, value in fields.items():
         if not key.startswith("customfield_"):
             continue
+        name = field_map.get(key, key)
+        if name in CUSTOM_FIELD_NOISE:
+            continue
         value = prune(value)
         if value in (None, "", [], {}):
             continue
-        name = field_map.get(key, key)
         if isinstance(value, dict):
             value = _named(value) or value
         elif isinstance(value, list):
