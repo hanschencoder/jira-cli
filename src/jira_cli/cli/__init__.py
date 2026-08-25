@@ -16,6 +16,9 @@ app = typer.Typer(
     help="调用 Jira REST API 查询/创建/更新 issue、下载附件。输出对 AI 友好。",
     no_args_is_help=True,
     add_completion=False,
+    # -h 与 --help 等价。只需在顶层声明：click 的子 Context 会从父 Context
+    # 继承 help_option_names，各子命令组和子命令都跟着生效
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 
 app.add_typer(issue.app, name="issue")
