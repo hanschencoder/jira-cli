@@ -110,8 +110,8 @@ jira-cli issue comment ABC-123 "已定位，是 **线程竞争**"
 jira-cli issue transition ABC-123 "已完成" -f resolution=Done
 
 # 附件：列清单 + 下载落盘，输出本地路径供 AI 直接读取
-jira-cli issue attachments ABC-123 -o yaml
-jira-cli issue download ABC-123 --match '*.log' --dir ./logs
+jira-cli issue attachments ABC-123 -o yaml       # 先看清单，重点看 size
+jira-cli issue download ABC-123 --match '*.log'  # 落到 ~/.cache/jira-cli/attachments/ABC-123/
 
 # 元数据（查 id/可选值，默认读本地缓存，jira-cli meta update 刷新）
 jira-cli meta projects | issuetypes | statuses | users | fields | whoami
@@ -137,13 +137,14 @@ jira-cli log -n 20
 ```
 src/jira_cli/
   cli/         typer 命令层（issue / meta / config / log）
-  client.py    Jira REST v2 封装（鉴权、分页、重试、错误展开）
+  client.py    Jira REST v2 封装（鉴权、分页、错误展开）
   markup/      正文转换：wiki markup ↔ Markdown
   jql.py       链式 JQL builder（封装参数与 --jql 汇入同一路径）
   fields.py    字段白名单裁剪、展平、名称→id 解析
   meta_cache.py  元数据本地缓存
   config.py    配置加载与优先级
   output.py    yaml / json / table / md 输出
+  timefmt.py   时间戳格式化与时区换算
   writelog.py  写操作留痕
   errors.py    Jira 错误 → 可自我修复的提示
 skills/jira-cli/   指导 LLM 使用的 skill
