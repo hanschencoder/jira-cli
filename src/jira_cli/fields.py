@@ -38,6 +38,7 @@ SHOW_FIELDS = LIST_FIELDS + (
     "parent",
     "subtasks",
     "issuelinks",
+    "creator",
 )
 
 #: 纯噪音字段：内部 URL、头像、渲染用的 id。对 AI 一律无价值
@@ -257,20 +258,36 @@ def issue_links(fields: dict) -> list[dict]:
 
 
 def changelog_rows(raw: dict) -> list[dict]:
-    """变更历史展平成一行一次字段变更。"""
-    rows = []
+    """变更历史展平成一行一次字段变更，最早的在前。
+
+    开头补一条「创建」——**Jira 的 changelog 只记录变更，不含创建事件**，
+    直接输出的话时间线永远缺第一格，看不出这条 issue 是谁、什么时候开的。
+    创建信息从 fields.created + creator/reporter 合成。
+    """
+    fields = raw.get("fields") or {}
+    rows: list[dict] = []
+
+    created_at = fields.get("created")
+    if created_at:
+        opener = user_name(fields.get("creator")) or user_name(fields.get("reporter"))
+        rows.append(
+            prune({"at": created_at, "who": opener, "field": "created", "to": raw.get("key")})
+        )
+
     for entry in ((raw.get("changelog") or {}).get("histories") or []):
         author = user_name(entry.get("author"))
-        created = entry.get("created")
+        at = entry.get("created")
         for item in entry.get("items") or []:
             rows.append(
-                {
-                    "at": created,
-                    "who": author,
-                    "field": item.get("field"),
-                    "from": item.get("fromString"),
-                    "to": item.get("toString"),
-                }
+                prune(
+                    {
+                        "at": at,
+                        "who": author,
+                        "field": item.get("field"),
+                        "from": item.get("fromString"),
+                        "to": item.get("toString"),
+                    }
+                )
             )
     return rows
 

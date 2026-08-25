@@ -81,10 +81,18 @@
 ### history
 
 ```json
-[ {"at": "2026-08-25T14:43:25.000+0800", "who": "zhang.san", "field": "status", "from": "To Do", "to": "In Progress"} ]
+[
+  {"at": "2026-08-25T11:31:57.000+0800", "who": "zhang.san", "field": "created", "to": "ABC-1"},
+  {"at": "2026-08-25T14:43:25.000+0800", "who": "zhang.san", "field": "status", "from": "To Do", "to": "In Progress"},
+  {"at": "2026-08-25T14:44:06.000+0800", "who": "zhang.san", "field": "resolution", "from": "Done"}
+]
 ```
 
-一行一次字段变更。
+一行一次字段变更，**最早的在前**。
+
+- 第一条 `field: "created"` 是**本工具合成**的创建事件。Jira 的 changelog 只记录*变更*、不含创建，直接输出会缺时间线的第一格。`who` 取 `creator`，取不到则退到 `reporter`。
+- **`from` / `to` 缺失表示那一侧为空**：只有 `to` = 从无到有（如首次指派），只有 `from` = 被清空（如上例中 resolution 被清掉）。这是全局「null 不输出」约定的延续。
+- 一次操作可能产生多行：一次状态流转常同时改 `status` 和 `resolution`，它们的 `at` 相同。
 
 ### links
 
