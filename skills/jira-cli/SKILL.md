@@ -28,6 +28,7 @@ export JIRA_TOKEN=<用户的 PAT>
 - 优先级：命令行参数 > 环境变量（`JIRA_URL` / `JIRA_TOKEN`）> 配置文件。
 - 全局参数还有 `--url`、`--token`、`-k/--insecure`（跳过 TLS 校验）。
 - **不存在多 profile 切换**；临时换实例用全局 `--url` / `--token` 覆盖。
+- 时间戳输出为 `2026-08-25 11:31:57.000`，已换算到配置时区（默认东八区，`jira-cli config set timezone +09:00` 可改）。
 
 配置里的 `default-project` 很重要：设了之后 `issue list` / `issue create` 不带 `--project` 就走它。
 

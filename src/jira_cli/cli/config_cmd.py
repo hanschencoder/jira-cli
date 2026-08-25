@@ -13,6 +13,7 @@ from ..config import load as load_config
 from ..errors import JiraCliError
 from ..fields import resolve_one
 from ..output import FORMATS, emit, note
+from ..timefmt import DEFAULT_TZ
 from .common import FORMAT_OPTION, get_ctx
 
 app = typer.Typer(help="配置连接参数", no_args_is_help=True)
@@ -140,6 +141,7 @@ def init_cmd(
             "deployment": "server",
             "renderer": renderer,
             "default_project": default_project,
+            "timezone": DEFAULT_TZ,
             "insecure": insecure,
         }
     )

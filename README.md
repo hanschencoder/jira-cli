@@ -66,6 +66,7 @@ jira-cli config get      # 查看当前生效参数（token 脱敏）
 jira-cli config set url https://jira.example.com
 jira-cli config set token <你的-PAT>
 jira-cli config set default-project ABC
+jira-cli config set timezone +08:00      # 时间戳换算时区，默认东八区
 ```
 
 **PAT 获取**：Jira 页面右上角头像 →「个人设置」→「Personal Access Tokens」→ Create token。

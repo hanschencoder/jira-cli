@@ -17,6 +17,7 @@ from ..fields import build_field_map, resolve_one, reverse_field_map
 from ..errors import ResolveError
 from ..markup import Codec, get_codec
 from ..meta_cache import cached
+from ..timefmt import set_timezone
 from ..output import note
 
 #: -o 的取值。声明在各子命令上，因此可以后置在命令末尾
@@ -30,6 +31,8 @@ class Ctx:
 
     def __init__(self, config: Config) -> None:
         self.config = config
+        # 时间戳格式化是进程级设置，一次调用只有一份配置
+        set_timezone(config.timezone)
         self._backend: Optional[Backend] = None
         self._codec: Optional[Codec] = None
         self._field_map: Optional[dict[str, str]] = None

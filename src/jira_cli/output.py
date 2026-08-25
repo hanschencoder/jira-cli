@@ -53,8 +53,8 @@ def to_json(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-#: Jira 的时间戳形如 2026-08-25T14:24:42.000+0800，表格里显示全量会把其它列挤没
-_ISO_TS = re.compile(r"^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}")
+#: 时间戳形如 2026-08-25 14:24:42.000，表格里显示到秒会把其它列挤没，截到分钟
+_ISO_TS = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}):\d{2}")
 
 
 def _stringify(value: Any, *, compact: bool = False) -> str:

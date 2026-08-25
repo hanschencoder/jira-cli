@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Sequence
 
 from .errors import ResolveError
+from .timefmt import format_ts
 
 #: issue list 从服务端拉取的字段白名单。不在这里的字段根本不传输。
 LIST_FIELDS = (
@@ -118,8 +119,8 @@ def summarize_issue(raw: dict) -> dict:
         "project": (f.get("project") or {}).get("key"),
         "resolution": _named(f.get("resolution")),
         "labels": f.get("labels") or [],
-        "created": f.get("created"),
-        "updated": f.get("updated"),
+        "created": format_ts(f.get("created")),
+        "updated": format_ts(f.get("updated")),
     }
     return {k: v for k, v in row.items() if v not in (None, "", [])}
 
@@ -131,7 +132,7 @@ def attachment_row(att: dict) -> dict:
         "size": att.get("size"),
         "mime": att.get("mimeType"),
         "author": user_name(att.get("author")),
-        "created": att.get("created"),
+        "created": format_ts(att.get("created")),
     }
 
 
@@ -142,8 +143,8 @@ def comment_row(comment: dict, codec: Any) -> dict:
         {
             "id": comment.get("id"),
             "author": user_name(comment.get("author")),
-            "created": comment.get("created"),
-            "updated": updated if updated != comment.get("created") else None,
+            "created": format_ts(comment.get("created")),
+            "updated": format_ts(updated) if updated != comment.get("created") else None,
             "body": codec.from_jira(comment.get("body") or ""),
         }
     )
@@ -176,8 +177,8 @@ def detail_issue(
         "components": [_named(c) for c in (f.get("components") or [])],
         "fix_versions": [_named(v) for v in (f.get("fixVersions") or [])],
         "due": f.get("duedate"),
-        "created": f.get("created"),
-        "updated": f.get("updated"),
+        "created": format_ts(f.get("created")),
+        "updated": format_ts(f.get("updated")),
         "description": codec.from_jira(f.get("description") or ""),
     }
 
@@ -271,7 +272,7 @@ def changelog_rows(raw: dict) -> list[dict]:
     if created_at:
         opener = user_name(fields.get("creator")) or user_name(fields.get("reporter"))
         rows.append(
-            prune({"at": created_at, "who": opener, "field": "created", "to": raw.get("key")})
+            prune({"at": format_ts(created_at), "who": opener, "field": "created", "to": raw.get("key")})
         )
 
     for entry in ((raw.get("changelog") or {}).get("histories") or []):
@@ -281,7 +282,7 @@ def changelog_rows(raw: dict) -> list[dict]:
             rows.append(
                 prune(
                     {
-                        "at": at,
+                        "at": format_ts(at),
                         "who": author,
                         "field": item.get("field"),
                         "from": item.get("fromString"),

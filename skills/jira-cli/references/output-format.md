@@ -2,7 +2,10 @@
 
 用 `-o yaml`（推荐，省 token）或 `-o json` 输出结构化结果。下面用 JSON 展示各命令的字段结构；`-o yaml` 是同构的 YAML，字段完全一致。
 
-**通用约定**：值为 `null` 或空数组的字段**不会出现**在输出里。看不到某个字段就是它没有值，不用当成异常。
+**通用约定**：
+
+- 值为 `null` 或空数组的字段**不会出现**在输出里。看不到某个字段就是它没有值，不用当成异常。
+- **时间戳统一为 `2026-08-25 11:31:57.000`**，已换算到配置的时区（默认东八区，`timezone` 配置项或 `JIRA_TZ` 环境变量可改）。毫秒按源数据实际有什么显示什么，源里没有就不带小数部分。`-o table` 会截到分钟以免挤爆表格。
 
 ## issue list
 
@@ -22,8 +25,8 @@
       "reporter": "li.si",
       "project": "ABC",
       "labels": ["regression"],
-      "created": "2026-08-25T14:24:42.000+0800",
-      "updated": "2026-08-25T14:24:42.000+0800"
+      "created": "2026-08-25 14:24:42.000",
+      "updated": "2026-08-25 14:24:42.000"
     }
   ]
 }
@@ -53,8 +56,8 @@
   "components": ["问题管理"],
   "fix_versions": ["v2.0"],
   "due": "2026-09-01",
-  "created": "2026-08-25T14:10:16.000+0800",
-  "updated": "2026-08-25T14:13:45.000+0800",
+  "created": "2026-08-25 14:10:16.000",
+  "updated": "2026-08-25 14:13:45.000",
   "description": "## 复现步骤\n\n1. 打开设置页",
   "parent": "ABC-100",
   "attachments": [ {"id": "6055050", "filename": "log.7z", "size": 523239424, "mime": "application/octet-stream", "author": "zhang.san", "created": "..."} ],
@@ -73,7 +76,7 @@
 ### comments
 
 ```json
-[ {"id": "6456274", "author": "zhang.san", "created": "2026-08-25T14:42:37.000+0800", "body": "已定位：**线程竞争**"} ]
+[ {"id": "6456274", "author": "zhang.san", "created": "2026-08-25 14:42:37.000", "body": "已定位：**线程竞争**"} ]
 ```
 
 `body` 已转成 Markdown。`updated` 只在评论被编辑过时才出现。
@@ -82,9 +85,9 @@
 
 ```json
 [
-  {"at": "2026-08-25T11:31:57.000+0800", "who": "zhang.san", "field": "created", "to": "ABC-1"},
-  {"at": "2026-08-25T14:43:25.000+0800", "who": "zhang.san", "field": "status", "from": "To Do", "to": "In Progress"},
-  {"at": "2026-08-25T14:44:06.000+0800", "who": "zhang.san", "field": "resolution", "from": "Done"}
+  {"at": "2026-08-25 11:31:57.000", "who": "zhang.san", "field": "created", "to": "ABC-1"},
+  {"at": "2026-08-25 14:43:25.000", "who": "zhang.san", "field": "status", "from": "To Do", "to": "In Progress"},
+  {"at": "2026-08-25 14:44:06.000", "who": "zhang.san", "field": "resolution", "from": "Done"}
 ]
 ```
 
@@ -212,7 +215,7 @@
 
 ```json
 {"total": 3, "entries": [
-  {"ts": "2026-08-25T14:43:26+08:00", "op": "transition", "key": "ABC-1", "payload": {...}, "ok": true, "result": {"to": "Done"}}
+  {"ts": "2026-08-25 14:43:26", "op": "transition", "key": "ABC-1", "payload": {...}, "ok": true, "result": {"to": "Done"}}
 ]}
 ```
 

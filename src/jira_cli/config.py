@@ -31,6 +31,7 @@ ENV_OVERRIDES = {
     "token": "JIRA_TOKEN",
     "auth_type": "JIRA_AUTH_TYPE",
     "default_project": "JIRA_PROJECT",
+    "timezone": "JIRA_TZ",
 }
 
 
@@ -66,6 +67,8 @@ class Config:
     renderer: str = "wiki"
     #: 默认项目，省去每条命令都敲 --project
     default_project: str = ""
+    #: 时间戳输出时换算到的时区。支持 +08:00 / +0800 / Asia/Shanghai
+    timezone: str = "+08:00"
     #: 跳过 TLS 校验
     insecure: bool = False
 

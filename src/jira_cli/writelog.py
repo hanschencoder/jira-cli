@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .config import write_log_path
+from .timefmt import format_ts
 
 
 def record(op: str, key: str, payload: Any = None, ok: bool = True, result: Any = None) -> None:
@@ -45,7 +46,9 @@ def tail(limit: int = 20) -> list[dict]:
             if not line:
                 continue
             try:
-                rows.append(json.loads(line))
+                entry = json.loads(line)
             except ValueError:
                 continue
+            entry["ts"] = format_ts(entry.get("ts"))
+            rows.append(entry)
     return rows[-limit:][::-1]
