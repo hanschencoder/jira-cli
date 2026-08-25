@@ -5,18 +5,32 @@ description: 用 jira-cli 命令行查询、创建、更新 Jira issue，下载�
 
 # 使用 jira-cli
 
-`jira-cli` 命令封装 Jira REST API（Server / Data Center，REST v2）。错误走 stderr，退出码非 0 即失败。
+`jira-cli` 封装 Jira REST API（Server / Data Center，REST v2）。结构化结果走 stdout，提示与错误走 stderr，两者不混。
 
-不确定有哪些命令时，先跑 `jira-cli commands` 列出全部子命令及简介。
+不确定有哪些命令时先跑 `jira-cli commands`；任何命令加 `-h` 看参数。
 
-## 0. 首次配置（没有 url + token 任何命令都跑不了）
+## 失败时先看退出码
 
-第一步永远是确认连接已配置：`jira-cli config get`（显示当前 url 和脱敏 token）。
+退出码决定下一步该做什么，不要一律重试：
 
-未配置时，引导用户设置（二选一）：
+| 码 | 含义 | 你该做的 |
+|---|---|---|
+| 2 | 缺 url / token，或配置文件损坏 | 引导用户配置（见第 0 节），重试无用 |
+| 3 | 鉴权失败（401/403） | PAT 过期或无权限，让用户换 token，重试无用 |
+| 4 | Jira 返回其它错误 | 读 stderr，多半是字段值不合法 |
+| 5 | 项目 / 类型 / 状态 / 用户的名称解析不到 | stderr 列出了可选值，照着改一次 |
+| 6 | 流转失败 | stderr 列出了可用流转及必填字段，照着补一次 |
+
+**退出码 5 和 6 的 stderr 自带可选值清单，够你一轮改对，不必再发一次探查请求。**
+
+## 0. 先确认连接
+
+没有 url + token 时任何命令都跑不了。第一步永远是 `jira-cli config get`（显示当前 url 和脱敏 token）。
+
+未配置时引导用户二选一：
 
 ```bash
-# 方式 A：交互式引导（推荐）。会自动探测部署形态、正文渲染器，并让用户选默认项目
+# 方式 A：交互式引导（推荐）。自动探测部署形态与正文渲染器，并让用户选默认项目
 jira-cli config init
 
 # 方式 B：环境变量（临时 / CI）
@@ -24,41 +38,37 @@ export JIRA_URL=https://jira.example.com
 export JIRA_TOKEN=<用户的 PAT>
 ```
 
-- **PAT 获取**：Jira 页面右上角头像 →「个人设置」→「Personal Access Tokens」→ Create token。
-- 优先级：命令行参数 > 环境变量（`JIRA_URL` / `JIRA_TOKEN`）> 配置文件。
-- 全局参数还有 `--url`、`--token`、`-k/--insecure`（跳过 TLS 校验）。
-- **不存在多 profile 切换**；临时换实例用全局 `--url` / `--token` 覆盖。
-- 时间戳输出为 `2026-08-25 11:31:57.000`，已换算到配置时区（默认东八区，`jira-cli config set timezone +09:00` 可改）。
+- **PAT 获取**：Jira 页面右上角头像 →「个人设置」→「Personal Access Tokens」→ Create token
+- 优先级：命令行参数 > 环境变量 > 配置文件；无多 profile，临时换实例用 `--url` / `--token` 覆盖
+- 配置里的 `default-project` 很关键：设了之后 `issue list` / `issue create` 不带 `--project` 就走它
+- 时间戳输出形如 `2026-08-25 11:31:57.000`，已换算到配置时区（默认东八区）
 
-配置里的 `default-project` 很重要：设了之后 `issue list` / `issue create` 不带 `--project` 就走它。
+## 1. 选输出格式
 
-## 1. 选输出格式（先想清楚「给谁看」）
+`-o` 可后置在命令末尾，如 `jira-cli issue list --assignee me -o yaml`。
 
-`-o` 选格式，**可后置**在命令末尾，如 `jira-cli issue list --assignee me -o yaml`。
+| 场景 | 用什么 |
+|---|---|
+| **你自己读** | `-o yaml`（噪音最少最省 token）；要按字段精确提取时 `-o json` 配 `jq` |
+| **展示给用户** | 终端直接看用默认 `-o table`；放进回复或文档用 `-o md` |
 
-| 场景 | 优先级 | 说明 |
-|---|---|---|
-| **展示给用户** | table → md → yaml | 能用表格就用表格：终端直接看用默认 `-o table`，放进回复或文档用 `-o md` |
-| **你自己读取** | yaml / json | yaml 噪音最少最省 token；需要按字段精确提取时用 `-o json` 配合 `jq` |
-
-嵌套结构（`issue show`、`meta createmeta`）没有合理的表格投影，指定 `-o table` 会自动降级成 yaml。
-
-`jq` 取字段省 token 示例：
+格式名拼错会直接报错，不会静默降级。嵌套结构（`issue show`、`meta createmeta`）指定 `-o table` 会自动降级成 yaml。
 
 ```bash
 jira-cli issue list --project ABC -o json | jq '.issues[] | {key, status, summary}'
 jira-cli issue show ABC-1 -o json | jq -r '.description'
 ```
 
-## 2. 核心铁律
+## 2. 铁律
 
-1. **先查 meta 再操作**。不确定项目 / 类型 / 状态 / 字段 / 用户的写法时，先跑对应的 `jira-cli meta ...`。建 issue 前必须先 `meta createmeta` 查必填字段。
-   - 项目有 **KEY**（`ABC`，issue 编号 `ABC-123` 的前缀，结构性标识）和**名称**（`示例项目`，展示用、可改名）之分。`--project` 两者都收，但**回填给用户看时用 KEY**，它才是稳定的。
-2. **Jira 不能直接「设置状态」**，必须走工作流定义的 transition。用 `issue transition`，不要试图 `issue update -f status=...`。
-3. **写操作不可批量、不可撤销**。`update` / `transition` / `comment` 一次只接受**一个** issue key。写操作直接进生产、会真的发通知。
-4. **正文一律写 Markdown**。工具自动转成 Jira wiki markup，不要自己写 wiki 语法。
-5. **附件必须下载才能读**。Jira 的附件链接要带认证头，直接给你裸链接你也下不动。
-6. **`me` 指当前 token 用户**，用于 `--assignee me`、`--reporter me`。
+1. **先查 meta 再操作**。不确定项目 / 类型 / 状态 / 字段 / 用户的写法时，先跑对应的 `jira-cli meta ...`；建 issue 前必须先 `meta createmeta` 查必填字段。
+2. **项目 KEY 才是稳定标识**。KEY（`ABC`，即 issue 编号 `ABC-123` 的前缀）不变，名称（`示例项目`）可随时改。`--project` 两者都收，但**回填给用户看时用 KEY**。
+3. **不能直接「设置状态」**，必须走工作流定义的 transition。用 `issue transition`，不要试图 `issue update -f status=...`。
+4. **写操作不可批量、不可撤销**。`update` / `transition` / `comment` 一次只接受**一个** issue key。写操作直接进生产、会真的发通知。
+5. **绝不带占位符执行写操作**。summary、description、每个 `-f` 的值都必须是用户确认过的真实内容；不确定就先问，或据同类 issue 生成草稿供 review。给用户展示命令模板时，占位符用明显非法的写法（如 `『在这里填』`），防止被整段复制执行。
+6. **正文一律写 Markdown**，工具自动转成 wiki markup，不要自己写 wiki 语法。
+7. **附件只能用 `issue download` 拿**，不要去翻 `content` 字段然后 `curl` / WebFetch（见第 7 节）。
+8. **`me` 指当前 token 用户**，用于 `--assignee me`、`--reporter me`。
 
 ## 3. 常用命令速查（照抄即正确）
 
@@ -68,7 +78,6 @@ jira-cli issue show ABC-1 -o json | jq -r '.description'
 | 查配置 | `jira-cli config get` |
 | 查我名下未完成 issue | `jira-cli issue list --assignee me --status open -n 30 -o yaml` |
 | 查项目全部 issue | `jira-cli issue list --project ABC -o yaml` |
-| 按更新时间倒序 | `jira-cli issue list --project ABC --sort updated:desc -o yaml` |
 | 最近 7 天有更新的 | `jira-cli issue list --project ABC --updated '>=-7d' -o yaml` |
 | 复杂条件（降级到 JQL） | `jira-cli issue list --jql 'labels = urgent AND sprint in openSprints()' -o yaml` |
 | 看 issue 详情 | `jira-cli issue show ABC-1 -o yaml` |
@@ -86,49 +95,51 @@ jira-cli issue show ABC-1 -o json | jq -r '.description'
 | 上传附件 | `jira-cli issue update ABC-1 --attach ./log.zip` |
 | 查该 issue 能流转到哪 | `jira-cli meta transitions ABC-1 -o yaml` |
 | 查建单必填字段 | `jira-cli meta createmeta --project ABC --type Bug -o yaml` |
-| 查项目 / 类型 / 状态 / 优先级 | `jira-cli meta projects\|issuetypes\|statuses\|priorities -o yaml` |
+| 查项目列表 | `jira-cli meta projects -o yaml` |
+| 查类型 / 状态 / 优先级 | `jira-cli meta issuetypes`、`jira-cli meta statuses`、`jira-cli meta priorities` |
 | 查用户登录名 | `jira-cli meta users 张三 -o yaml` |
 | 查自定义字段 id | `jira-cli meta fields 严重程度 -o yaml` |
 | 回查自己做过的写操作 | `jira-cli log -n 20` |
 
-## 4. 筛选参数（`issue list`）
+`--fields` 用的是**输出里看到的字段名**（`type`、`due`、`fix_versions`），不是 Jira 内部名。先跑一次不带 `--fields` 的 `issue show` 看有哪些 key，再挑。
 
-- `--project` / `-p` 项目 **KEY 或名称均可**（如 `ABC` 或 `示例项目`），内部统一解析成 key；不给则用配置里的 `default-project`。用名称或前缀匹配上时会在 stderr 说明落到了哪个项目
+## 4. `issue list` 的筛选参数
+
+- `--project` / `-p` 项目 KEY 或名称均可，不给则用 `default-project`。用名称匹配上时 stderr 会说明落到了哪个项目
 - `--assignee` / `-a` 经办人**登录名**（不是显示名），`me` 表示自己。登录名用 `meta users` 查
 - `--reporter` 报告人，同上
-- `--status` / `-s` 状态名；`open` / `closed` 是简写（映射到 `statusCategory`），`*` 表示不过滤
-- `--type` / `-t` issue 类型名
-- `--priority` 优先级名
+- `--status` / `-s` 状态名；`open` / `closed` 是简写，`*` 表示不过滤
+- `--type` / `-t` 类型名，`--priority` 优先级名
 - `--label` / `-l` 标签，可多次传（多个之间是 OR）
 - `--summary` 标题包含关键词
-- `--created` / `--updated` 时间区间，三种写法：`>=-7d`、`<=2026-05-31`、`2026-05-01|2026-05-31`
+- `--created` / `--updated` 三种写法：`>=-7d`、`<=2026-05-31`、`2026-05-01|2026-05-31`
 - `--jql` 原始 JQL，与上面的参数 **AND 合并**，不是二选一
-- `--sort` 排序，如 `updated:desc`（默认）、`priority:desc`
-- `--limit` / `-n` 最多返回条数，默认 50
+- `--sort` 如 `updated:desc`。不给且 `--jql` 里也没 `ORDER BY` 时默认 `updated:desc`
+- `--limit` / `-n` 最多返回条数，默认 50，**最小 1**
 
-**至少给一个筛选条件**，否则会报错拒绝执行（防止扫描全站）。
+两个硬性约束：
 
-JQL 写法见 `references/jql.md`。
+- **至少给一个筛选条件**，否则报错拒绝执行（防止扫描全站）
+- **含 `>` `<` `|` `*` 的取值必须套单引号**，否则会被 shell 当成重定向或通配符：`--updated '>=-7d'`、`--match '*.log'`
+
+结果被截断时 stderr 会提示匹配总数，按需调大 `-n`。JQL 写法见 `references/jql.md`。
 
 ## 5. 改状态
 
-Jira 的状态由工作流控制，能从当前状态走到哪些状态是**固定的**，不能任意设置。
+能从当前状态走到哪些状态由工作流固定，不能任意设置。
 
 ```bash
-# 1. 先看能流转到哪（也可以直接跳到第 2 步，失败时错误信息会告诉你）
+# 1. 先看能流转到哪（也可直接跳到第 2 步，失败时错误信息会告诉你）
 jira-cli meta transitions ABC-1 -o yaml
 
 # 2. 按名称流转。流转名和目标状态名都能匹配，支持唯一子串
 jira-cli issue transition ABC-1 '完成'
 
-# 3. 带必填字段
-jira-cli issue transition ABC-1 '完成' -f resolution=Done
-
-# 4. 流转同时加评论
-jira-cli issue transition ABC-1 '完成' --comment '已验证通过'
+# 3. 带必填字段 / 同时加评论
+jira-cli issue transition ABC-1 '完成' -f resolution=Done --comment '已验证通过'
 ```
 
-**匹配不上或缺必填字段时，错误信息会直接列出当前可用的全部流转、各自的必填字段及可选值。** 照着补一次即可，不需要再单独跑 `meta transitions`。
+**匹配不上或缺必填字段时（退出码 6），stderr 会列出当前可用的全部流转、各自的必填字段及可选值**，照着补一次即可，不需要再单独跑 `meta transitions`。
 
 ## 6. 建 issue
 
@@ -137,9 +148,7 @@ jira-cli issue transition ABC-1 '完成' --comment '已验证通过'
 jira-cli meta createmeta --project ABC --type Bug -o yaml
 
 # 2. 建单。描述写 Markdown，工具自动转成 wiki markup
-jira-cli issue create \
-  --project ABC \
-  --type Bug \
+jira-cli issue create --project ABC --type Bug \
   --summary '登录页在弱网下白屏' \
   --description '## 复现步骤
 
@@ -152,184 +161,60 @@ jira-cli issue create \
 | --- | --- | --- |
 | 首屏 | 3s 内 | 白屏 |
 ' \
-  --assignee zhang.san \
-  --priority High \
-  --label regression \
-  -f 严重程度=Major \
-  --attach ./screenshot.png \
-  -o yaml
+  --assignee zhang.san --priority High --label regression \
+  -f 严重程度=Major --attach ./screenshot.png -o yaml
 ```
 
-- `-f name=value` 可多次传，`name` 用字段显示名或字段 id（`customfield_10001`）都行。
-- 多选字段的多个取值用逗号分隔：`-f 影响模块=登录,支付`。
-- 列表型字段的取值必须和 `createmeta` 里的 `allowed` **逐字一致**。
-- `--attach` 可多次传。
+- `-f name=value` 可多次传，`name` 用字段显示名或字段 id（`customfield_10001`）都行
+- 多选字段的多个取值用逗号分隔：`-f 影响模块=登录,支付`
+- 列表型字段的取值必须与 `createmeta` 里的 `allowed` **逐字一致**
+- 建单失败（退出码 4）时 stderr 会附上查 `createmeta` 的命令
+- `--attach` 可多次传。注意 **`-a` 是 `--assignee` 的短参**，不是附件
 
-### 铁律：绝不允许带占位符执行
+`issue update` 的字段语义相同。`--label` 是**覆盖**不是追加；不传的字段则保持不变。
 
-**summary、description、每个 `-f` 的值必须是用户确认过的真实内容。** 写操作直接进生产、指派通知真的会发出，无法静默撤销。不确定就先问用户，或据同类 issue 生成草稿供 review。
+## 7. 附件
 
-给用户展示命令模板时，占位符要用明显非法的写法（如 `『在这里填』`），防止被整段复制执行。
-
-## 7. 附件（两步：先看清单，再下载）
-
-`attachments` 只列清单不下载，`download` 才落盘。**永远先跑 `attachments`。**
-
-### 7.1 第一步：看清单
+**两步：先 `attachments` 看清单，再 `download` 落盘。**
 
 ```bash
 jira-cli issue attachments ABC-123 -o yaml
 ```
 
 ```yaml
-issue: ABC-123
-total: 2
 attachments:
 - id: '6055369'          # download --id 用这个
   filename: data.csv
   size: 14               # 字节。决定要不要下的关键
   mime: text/csv
-  author: zhang.san
-  created: '2026-08-25 14:42:38.000'
-- id: '6055368'
-  filename: smoke.log
-  size: 55
-  mime: text/plain
 ```
 
-**这一步的意义是看 `size`。** 生产 issue 上挂几百 MB 的日志包很常见（实测见过单个附件 523 MB 的 `.7z`）。不看大小直接全下会拖垮磁盘和时间。
-
-### 7.2 第二步：下载
+**这一步的意义是看 `size`。** 生产 issue 上挂几百 MB 的日志包、几 GB 的分卷很常见，不看大小直接全下会拖垮磁盘和时间。
 
 ```bash
-# 全下，落到当前目录下的 ./jira-attachments/ABC-123/
-jira-cli issue download ABC-123 -o yaml
-
-# 按文件名 glob 过滤——排查日志时最常用
-jira-cli issue download ABC-123 --match '*.log' -o yaml
-
-# 按 id 精确要某一个（id 来自第一步的清单）
-jira-cli issue download ABC-123 --id 6055369 -o yaml
-
-# 指定目录（平铺放置，不再套 <KEY>/ 那层）
-jira-cli issue download ABC-123 --dir /tmp/logs -o yaml
-
-# 忽略本地缓存强制重下
-jira-cli issue download ABC-123 --force -o yaml
-
-# 确认下载超过体积上限的附件
-jira-cli issue download ABC-123 -y -o yaml
+jira-cli issue download ABC-123 --match '*.log' -o yaml   # 按文件名 glob 过滤，排查日志最常用
+jira-cli issue download ABC-123 --id 6055369 -o yaml      # 按 id 精确要某一个
+jira-cli issue download ABC-123 --dir /tmp/logs -o yaml   # 指定目录（平铺，不再套 <KEY>/ 那层）
+jira-cli issue download ABC-123 --force -o yaml           # 忽略本地缓存强制重下
 ```
 
-`--match` 与 `--id` 可叠加。输出：
+`--match` 与 `--id` 可叠加。要点：
 
-```yaml
-issue: ABC-123
-dir: /abs/path/jira-attachments/ABC-123
-downloaded: 2
-files:
-- id: '6055369'
-  filename: data.csv
-  path: /abs/path/jira-attachments/ABC-123/data.csv   # 本地绝对路径
-  size: 14
-  mime: text/csv
-```
+- **用输出里的 `files[].path` 去读文件**（本地绝对路径），不要自己拼路径。不带 `--dir` 时落点是固定的缓存目录，与当前工作目录无关，不会把附件撒进用户的代码仓库
+- **下载前自动检查本地缓存**：同路径且大小一致的直接跳过并标 `cached: true`，所以对同一 issue 反复跑很便宜。本地文件被截断时会自动重下
+- **没有匹配时不报错**，返回 `downloaded: 0` 且 `files: []`，脚本不会因空结果中断
+- **单次实际要下载的量超过 200 MB 会拒绝执行**（退出码 1），stderr 列出清单和三种处理方式。已命中缓存的不计入。**优先用 `--match` / `--id` 缩小范围，而不是无脑加 `-y`**——用户多半只要日志，不要那几个 500 MB 的视频分卷
+- **不要试图用 URL 下载**。附件地址必须带 `Authorization` 头，`curl` 或 WebFetch 只会拿到 401 或登录页，白白浪费一轮
 
-`path` 是**本地绝对路径**，直接拿去 Read / grep，不需要再拼。
+拿到文件之后：文本 / 日志直接 Read，**超过几 MB 先 `grep -n` 定位行号再局部读**；图片 Read 可以直接看；压缩包先 `unzip -l` / `7z l` 看清单再解需要的部分。
 
-没有匹配时**不报错**，正常返回 `downloaded: 0` 且 `files: []`，stderr 提示「没有匹配的附件」——脚本里不会因为空结果中断。
-
-### 7.3 下载到哪里 + 本地缓存
-
-不带 `--dir` 时，落点是**固定的缓存目录**，与当前工作目录无关：
-
-```
-Linux   ~/.cache/jira-cli/attachments/<ISSUE-KEY>/
-macOS   ~/Library/Caches/jira-cli/attachments/<ISSUE-KEY>/
-```
-
-所以在任何目录下跑同一条命令，落点都一样，**不会把附件撒进用户的代码仓库**。
-
-想换地方，两种方式：
-
-```bash
-# 改默认根目录（长期）。实际文件仍放在 <根目录>/<KEY>/ 下
-jira-cli config set download-dir /data/jira-dl
-
-# 只这一次（平铺放置，不再套 <KEY>/ 那层）
-jira-cli issue download ABC-123 --dir /tmp/logs
-```
-
-**下载前会自动检查本地缓存**：同路径且大小一致的文件直接跳过，输出里标 `cached: true`，stderr 提示复用了几个。所以对同一个 issue 反复跑 `download` 很便宜，不会重复拉流量。
-
-```yaml
-downloaded: 0     # 本次新下载的
-cached: 4         # 复用本地的
-total_size: 128
-files:
-- path: /home/u/.cache/jira-cli/attachments/ABC-123/data.csv
-  cached: true
-```
-
-要强制重下加 `--force`。本地文件损坏或被截断时（大小对不上）会**自动重下**，不用手动清。
-
-无论落在哪，都用输出里的 `dir` 和 `files[].path`（都是绝对路径）去读文件，别自己拼。
-
-### 7.4 体积闸门：超过 200 MB 会拒绝执行
-
-本次**实际要走网络**的字节数超过 200 MB 时，命令直接报错退出（退出码 1，stdout 无输出），并列出清单：
-
-```
-错误：本次需要下载 2.0 GB，超过上限 200 MB
-
-本次要下载的附件（大的在前）：
-    500.0 MB  log.7z.001  (id=5966700)
-    500.0 MB  log.7z.002  (id=5966701)
-      3.5 MB  20260811-140336.mp4  (id=5966725)
-
-三种处理方式：
-  1. 缩小范围：jira-cli issue download ABC-123 --match '*.log'
-  2. 只要某个：jira-cli issue download ABC-123 --id <上面的 id>
-  3. 确实都要：jira-cli issue download ABC-123 -y
-```
-
-这个闸门是必要的：生产 issue 上挂几 GB 附件很常见（实测见过单条 issue 6 个分卷合计 **2.54 GB**、另一条挂 **132 个**附件）。
-
-要点：
-
-- **只统计真正要下载的部分**。已命中缓存的文件不计入，所以对同一 issue 重复跑不会突然被拦。
-- `-y` / `--yes` 确认放行。
-- 上限可调：`jira-cli config set download-limit-mb 500`，**设 0 关闭**。
-- **优先用 `--match` / `--id` 缩小范围，而不是无脑加 `-y`**。用户多半只需要日志，不需要那几个 500 MB 的视频分卷。
-
-### 7.5 铁律：不要试图用 URL 下载
-
-`attachments` 的输出里**故意不含下载链接**。Jira Server 的附件地址必须带 `Authorization: Bearer` 头才能取，浏览器能下是因为有 session cookie。
-
-所以：**不要去 `issue show --raw` 里翻 `content` 字段然后 `curl` 或 WebFetch**——只会拿到 401 或登录页，白白浪费一轮。附件只能通过 `issue download` 拿。
-
-### 7.6 拿到文件之后
-
-- 文本 / 日志：直接 Read；**超过几 MB 先 `grep -n` 定位行号再局部读**，别整个塞进上下文
-- 图片：Read 可以直接看
-- 压缩包：先 `unzip -l` / `7z l` 看清单，再解需要的那部分
-- 落点见 7.3——默认在固定的缓存目录，不跟当前目录走；体积上限见 7.4
-
-### 7.7 上传附件
-
-```bash
-jira-cli issue update ABC-123 --attach ./report.html --attach ./screenshot.png
-```
-
-`--attach` 可多次传。注意 **`-a` 是 `--assignee` 的短参**，不是附件。
+上传用 `jira-cli issue update ABC-123 --attach ./report.html`，`--attach` 可多次传。
 
 ## 8. 正文格式
 
-读出来的 `description` 和评论正文都已经转成 **Markdown**；写进去也传 Markdown，工具负责转成 Jira wiki markup。
+读出来的 `description` 和评论正文都已转成 **Markdown**；写进去也传 Markdown，工具负责转成 wiki markup。标题、粗体、删除线、代码块、嵌套列表、表格、引用、链接、图片都支持。
 
-支持的元素：标题、粗体、斜体、删除线、行内代码、代码块（带语言）、有序 / 无序 / 嵌套列表、表格、引用、链接、图片、分隔线。
-
-转换器在边界情况出问题时，有逃生舱直接传 wiki 原文：
+转换器在边界情况出问题时，有逃生舱直传 wiki 原文：
 
 ```bash
 jira-cli issue create ... --description-raw 'h2. 标题
@@ -343,8 +228,7 @@ jira-cli issue comment ABC-1 'bq. 引用' --raw
 - `references/output-format.md`：各命令输出字段说明
 - `references/jql.md`：JQL 速查，降级到 `--jql` 时用
 
-## 注意
+## 其它
 
-- `meta projects|issuetypes|statuses|priorities|fields` 默认读本地缓存（7 天有效期），需要最新数据加 `--refresh` 或跑 `jira-cli meta update` 清缓存。
-- `issue list` 返回被截断时会在 stderr 提示匹配总数，按需调大 `-n`。
-- 所有写操作都记在本地留痕日志里，`jira-cli log` 可回查。
+- `meta projects` / `issuetypes` / `statuses` / `priorities` / `fields` 默认读本地缓存（7 天有效期），要最新数据加 `--refresh` 或跑 `jira-cli meta update` 清缓存
+- 所有写操作都记在本地留痕日志里，`jira-cli log` 可回查

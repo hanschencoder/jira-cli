@@ -124,10 +124,10 @@
 ```json
 {
   "issue": "ABC-1",
-  "dir": "/abs/path/jira-attachments/ABC-1",
+  "dir": "/home/u/.cache/jira-cli/attachments/ABC-1",
   "downloaded": 2,
   "files": [
-    {"id": "6055369", "filename": "data.csv", "path": "/abs/path/jira-attachments/ABC-1/data.csv", "size": 14, "mime": "text/csv"}
+    {"id": "6055369", "filename": "data.csv", "path": "/home/u/.cache/jira-cli/attachments/ABC-1/data.csv", "size": 14, "mime": "text/csv"}
   ]
 }
 ```
