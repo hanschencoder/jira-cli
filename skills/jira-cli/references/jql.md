@@ -73,7 +73,13 @@ jira-cli issue list --project ABC --jql 'sprint in openSprints()' -o yaml
 ORDER BY updated DESC, priority ASC
 ```
 
-用 `--sort updated:desc` 更简单，只有多字段排序才需要写进 `--jql`。注意 `--sort` 会覆盖 `--jql` 里的 `ORDER BY`，两者别同时写。
+用 `--sort updated:desc` 更简单，只有多字段排序才需要写进 `--jql`：
+
+```bash
+jira-cli issue list --project ABC --jql 'ORDER BY priority DESC, created ASC'
+```
+
+优先级：**显式给的 `--sort` > `--jql` 里的 `ORDER BY` > 默认 `updated:desc`**。两者别同时写。
 
 ## 常用查询模板
 

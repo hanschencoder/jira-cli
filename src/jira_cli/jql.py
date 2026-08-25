@@ -62,6 +62,44 @@ def normalize_user(value: str) -> str:
     return value
 
 
+def split_order_by(expression: str) -> tuple[str, str]:
+    """把尾部的 ORDER BY 子句从条件里拆出来。
+
+    只认**顶层**（不在引号内、不在括号内）的 ORDER BY——
+    `summary ~ "ORDER BY"` 这种取值里的关键字不能误伤。
+    """
+    text = expression.strip()
+    upper = text.upper()
+    quote: str | None = None
+    depth = 0
+    found: int | None = None
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote:
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+        elif char in "\"'":
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif depth == 0 and upper.startswith("ORDER", index):
+            after = upper[index + 5 :]
+            stripped = after.lstrip()
+            starts_word = index == 0 or not (text[index - 1].isalnum() or text[index - 1] == "_")
+            if starts_word and len(after) != len(stripped) and stripped.startswith("BY"):
+                found = index
+        index += 1
+    if found is None:
+        return text, ""
+    return text[:found].strip(), text[found:].strip()
+
+
 class JQL:
     """链式构造 JQL。所有 filter 方法返回 self，便于串联。"""
 
@@ -91,11 +129,21 @@ class JQL:
         return self.filter_by(field, value, op="~")
 
     def raw(self, expression: str | None) -> "JQL":
-        """原样并入一段 JQL（--jql 的入口）。"""
-        expression = (expression or "").strip()
-        if expression:
-            self._clauses.append(f"({expression})")
+        """原样并入一段 JQL（--jql 的入口）。
+
+        条件部分要包进括号才能安全地和其它子句 AND 合并，但 **ORDER BY
+        不能出现在括号里**——`(a = 1 ORDER BY b)` 不是合法 JQL。所以先把
+        尾部的 ORDER BY 拆出来单独安置。
+        """
+        condition, order = split_order_by(expression or "")
+        if condition:
+            self._clauses.append(f"({condition})")
+        if order:
+            self._order = order
         return self
+
+    def has_order(self) -> bool:
+        return bool(self._order)
 
     def date(self, field: str, expr: str | None) -> "JQL":
         """日期过滤。

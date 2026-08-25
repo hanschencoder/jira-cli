@@ -42,6 +42,7 @@ export JIRA_CLI_CONFIG_DIR=/tmp/jiratest && uv run jira-cli meta whoami -o yaml
 - **不做统计（stats）、不做敏捷（board/sprint/epic）**
 - **Jira 不能直接「设置状态」**，必须走 transition。`issue transition <KEY> <状态名>` 按名称模糊匹配 transition id；匹配失败或缺必填字段时，错误信息必须**列出当前可用的全部 transition 及其必填字段和可选值**——让 AI 一轮自我纠正，别只报「失败」
 - **Jira 不强制项目名唯一**，且允许一个项目的名称等于另一个项目的 KEY（JRASERVER-69362，2025-03 以 Low Engagement 关闭，不会修）。所以 `resolve_one` 必须**按 id → key → name 逐字段整轮扫描**，不能逐条候选依次比对各字段——后者的命中结果取决于列表顺序，`--project FOO` 可能落到不同项目且毫无提示。同一轮里撞到多个必须报错
+- **`--jql` 的 ORDER BY 必须从条件里拆出来**。条件要包进括号才能安全 AND 合并，但 `(a = 1 ORDER BY b)` 不是合法 JQL。`jql.split_order_by()` 做顶层拆分（识别引号与括号，`summary ~ "ORDER BY"` 和 `reorder = 1` 都不会误伤）
 - **项目标识必须归一化成 key**。JQL 的 `project` 字段接受项目名，但 `/issue`（建单）和 `/issue/createmeta` 只认 key——**createmeta 拿到项目名时静默返回空列表**，看起来像「该项目没有 issue 类型」而不是报错。`Ctx.resolve_project()` 统一把 key/名称/id 解析成 key，所有吃 `--project` 的命令都要走它
 - **流转带评论必须单独发一次评论请求**，不要塞进 transition 的 `update.comment`。实测：该 transition 的界面若没配「评论」字段，Jira **返回成功但静默丢弃评论**，不报任何错。静默失败对调用方最致命，宁可多一次请求
 - **md→wiki 绝不用正则替换**。必须走 Markdown AST + renderer。正则会在嵌套列表、表格内联代码、元字符转义上翻车。参考 `ankitpokhrel/jira-cli` 源码注释：`'*' can be either be bold or an unordered list`

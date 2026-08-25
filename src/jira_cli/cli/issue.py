@@ -83,13 +83,13 @@ def list_cmd(
     created: Optional[str] = typer.Option(None, "--created", help="创建时间，如 '>=-7d' 或 '2026-05-01|2026-05-31'"),
     updated: Optional[str] = typer.Option(None, "--updated", help="更新时间，写法同 --created"),
     jql: Optional[str] = typer.Option(None, "--jql", help="原始 JQL，与上面的参数 AND 合并"),
-    sort: str = typer.Option("updated:desc", "--sort", help="排序，如 updated:desc"),
+    sort: Optional[str] = typer.Option(None, "--sort", help="排序，如 updated:desc。不给且 --jql 里也没 ORDER BY 时默认 updated:desc"),
     limit: int = typer.Option(50, "-n", "--limit", help="最多返回条数"),
     fmt: str = FORMAT_OPTION,
 ) -> None:
     """按条件查询 issue。封装参数与 --jql 可同时使用。"""
     c = get_ctx(ctx)
-    query = (
+    builder = (
         JQL()
         .filter_by("project", c.project_or_default(project))
         .filter_by("assignee", normalize_user(assignee) if assignee else None)
@@ -102,9 +102,13 @@ def list_cmd(
         .date("created", created)
         .date("updated", updated)
         .raw(jql)
-        .order_by(sort)
-        .build()
     )
+    # --sort 显式给了就用它；否则保留 --jql 自带的 ORDER BY；都没有才兜底
+    if sort:
+        builder.order_by(sort)
+    elif not builder.has_order():
+        builder.order_by("updated:desc")
+    query = builder.build()
     if not query.strip() or query.strip().startswith("ORDER BY"):
         raise JiraCliError(
             "查询条件为空，会扫描全站。",
