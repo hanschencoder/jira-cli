@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.env
+config.toml
+write-log.jsonl
+jira-attachments/
+.pytest_cache/
+.ruff_cache/
