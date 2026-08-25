@@ -125,9 +125,12 @@
 {
   "issue": "ABC-1",
   "dir": "/home/u/.cache/jira-cli/attachments/ABC-1",
-  "downloaded": 2,
+  "downloaded": 1,
+  "cached": 1,
+  "total_size": 69,
   "files": [
-    {"id": "6055369", "filename": "data.csv", "path": "/home/u/.cache/jira-cli/attachments/ABC-1/data.csv", "size": 14, "mime": "text/csv"}
+    {"id": "6055369", "filename": "data.csv", "path": "/home/u/.cache/jira-cli/attachments/ABC-1/data.csv", "size": 14, "mime": "text/csv", "cached": false},
+    {"id": "6055368", "filename": "smoke.log", "path": "/home/u/.cache/jira-cli/attachments/ABC-1/smoke.log", "size": 55, "mime": "text/plain", "cached": true}
   ]
 }
 ```
@@ -230,15 +233,6 @@
 
 ## 错误
 
-错误信息输出到 **stderr**，stdout 无输出，退出码非 0：
+错误信息输出到 **stderr**，stdout 无输出，退出码非 0。
 
-| 退出码 | 含义 |
-|---|---|
-| 1 | 通用错误（参数不合法、查询条件为空等） |
-| 2 | 缺配置（url / token） |
-| 3 | 鉴权失败（PAT 过期或权限不足） |
-| 4 | Jira 返回非 2xx |
-| 5 | 名称解析失败（项目 / 类型 / 状态 / 用户找不到） |
-| 6 | 状态流转失败（名称匹配不上或缺必填字段） |
-
-退出码 5 和 6 的错误信息里**会带上可选值清单**，照着修正一次即可，不需要再发探查请求。
+各退出码的含义与对应处置见 `SKILL.md` 的「失败时先看退出码」一节，此处不重复，以免两边改不同步。

@@ -15,6 +15,7 @@ description: 用 jira-cli 命令行查询、创建、更新 Jira issue，下载�
 
 | 码 | 含义 | 你该做的 |
 |---|---|---|
+| 1 | 通用错误：参数不合法、查询条件为空、下载超体积上限 | 读 stderr，它会说明怎么改 |
 | 2 | 缺 url / token，或配置文件损坏 | 引导用户配置（见第 0 节），重试无用 |
 | 3 | 鉴权失败（401/403） | PAT 过期或无权限，让用户换 token，重试无用 |
 | 4 | Jira 返回其它错误 | 读 stderr，多半是字段值不合法 |
@@ -58,6 +59,13 @@ export JIRA_TOKEN=<用户的 PAT>
 jira-cli issue list --project ABC -o json | jq '.issues[] | {key, status, summary}'
 jira-cli issue show ABC-1 -o json | jq -r '.description'
 ```
+
+**读输出时最容易读错的四处**（其余字段含义查 `references/output-format.md`）：
+
+1. **`assignee` / `reporter` 是登录名**（`zhang.san`），要展示给用户看的中文名在 `assignee_display` / `reporter_display`。回填给 `--assignee` 时用登录名那个。
+2. **值为空的字段直接不出现**，不是异常。看不到 `assignee` 就是没人认领，别当成取字段失败。
+3. **`returned` < `total_matched` 说明被截断**，不是「总共就这么多」。要全量就调大 `-n`。
+4. **`custom_fields` 里多数是建单时预填的模板占位符**（`【前提条件】：`、`Please fill in the template below.`），不是有人写的内容，别当成 issue 的实际信息去分析。
 
 ## 2. 铁律
 
