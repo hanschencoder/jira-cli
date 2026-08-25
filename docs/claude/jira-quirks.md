@@ -20,6 +20,7 @@
 
 1. **transition 的 `update.comment` 会被丢弃**——该 transition 的界面若没配「评论」字段，Jira 返回成功但评论根本没写入。所以流转带评论必须**流转成功后单独发一次 `add_comment`**。
 2. **`createmeta` 拿到项目名时返回空 `issuetypes` 列表**而非报错，看起来像「该项目没有 issue 类型」。所以项目标识必须先归一化成 KEY。
+3. **错误响应可以没有 body**（反代吐的 403/502 尤其常见）。`_handle` 里「空 body 就返回 None」这条判断必须排在状态码判断**之后**，否则错误被当成「成功但没数据」吞掉。
 
 ## 标识与唯一性
 
@@ -35,4 +36,6 @@
 ## 字段与时间
 
 - **一条 issue 挂 60+ 个自定义字段**，绝大多数是建单预填的模板占位符（`【前提条件】：`、`Please fill in the template below.`），还混着插件塞的 Java 对象 toString。全量输出 4600 字符 vs 精简后 365。所以默认不输出，`issue show --custom` 才给。
+- **`parent` 要的是 `{"key": "ABC-1"}`**，不是 `{"name": ...}`。它的 schema type 是 `issuelink`，落不进 `coerce_value` 里任何一个按 type 分派的分支，兜底会把它当普通字符串或按标准字段名包成 `name`——两种都得到一个没有指向性的 400。`_KEY_WRAPPED` 单独拦它。
+- **多行文本带 CRLF，且常有行尾空格**。两者都会让 PyYAML 放弃块字面量、退化成 `"步骤一\r\n步骤二 "` 的双引号转义形式，既难读又更费 token。展示路径（`custom_fields`）用 `normalize_newlines` 收敛；description 与评论走 codec 时已经处理过。
 - **时间戳格式**：Jira 返回 `2026-08-25T11:31:57.000+0800`——带 T、偏移不带冒号，**Python 3.10 的 `fromisoformat` 不认**。`timefmt.py` 自己解析，对外统一成 `2026-08-25 11:31:57.000` 并换算到配置时区。毫秒按源数据实际有什么显示什么，源里没有就不补 `.000`。

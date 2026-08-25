@@ -70,6 +70,20 @@ def write_log_path() -> Path:
     return config_dir() / WRITE_LOG_FILENAME
 
 
+def ensure_private_dir(path: Path) -> Path:
+    """建目录并收紧到 700。
+
+    这个目录下放着 PAT 和写操作留痕（含 issue 正文），按 umask 落成
+    755 的话同机其他用户能列目录、能读留痕。
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        path.chmod(0o700)
+    except OSError:  # pragma: no cover - 只读挂载等极端情况
+        pass
+    return path
+
+
 @dataclass
 class Config:
     """一次调用最终生效的配置。"""
@@ -146,7 +160,7 @@ def load_file() -> dict[str, object]:
 def save_file(data: dict[str, object]) -> Path:
     """写配置文件，权限 600（含 PAT）。"""
     path = config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(path.parent)
     with path.open("wb") as fh:
         tomli_w.dump({k: v for k, v in data.items() if v not in ("", None)}, fh)
     path.chmod(0o600)
@@ -176,19 +190,55 @@ def load(**overrides: object) -> Config:
             data[key] = value
 
     for key in _BOOL_FIELDS:
-        if key in data and isinstance(data[key], str):
-            data[key] = data[key].strip().lower() in ("1", "true", "yes", "on")
+        if key in data and not isinstance(data[key], bool):
+            data[key] = parse_bool(key, data[key])
 
     for key in _INT_FIELDS:
         if key in data and not isinstance(data[key], int):
-            try:
-                data[key] = int(str(data[key]).strip())
-            except ValueError:
-                raise ConfigError(
-                    f"配置项 {key.replace('_', '-')} 需要整数，收到：{data[key]!r}"
-                ) from None
+            data[key] = parse_int(key, data[key])
 
     return Config(**data)  # type: ignore[arg-type]
+
+
+def parse_bool(field: str, value: object) -> bool:
+    lowered = str(value).strip().lower()
+    if lowered in ("1", "true", "yes", "on"):
+        return True
+    if lowered in ("0", "false", "no", "off"):
+        return False
+    raise ConfigError(
+        f"配置项 {field.replace('_', '-')} 需要布尔值，收到：{value!r}",
+        "可用取值：true / false",
+    )
+
+
+def parse_int(field: str, value: object) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except ValueError:
+        raise ConfigError(
+            f"配置项 {field.replace('_', '-')} 需要整数，收到：{value!r}"
+        ) from None
+    if parsed < 0:
+        # 负的上限会让「超过上限」永远不成立，等于悄悄关掉闸门
+        raise ConfigError(
+            f"配置项 {field.replace('_', '-')} 不能为负，收到：{parsed}",
+            "设 0 表示关闭该限制。",
+        )
+    return parsed
+
+
+def coerce_setting(field: str, value: str) -> object:
+    """把 config set 收到的字符串按字段类型转成原生值。
+
+    **必须在写入前校验**：一旦非法值落进文件，之后每条命令都要先加载
+    配置，连 config set 自己都会被同一个值挡住，用户只剩手工编辑文件。
+    """
+    if field in _BOOL_FIELDS:
+        return parse_bool(field, value)
+    if field in _INT_FIELDS:
+        return parse_int(field, value)
+    return value
 
 
 def normalize_key(key: str) -> str:

@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 import json
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
-from .config import write_log_path
+from .config import ensure_private_dir, write_log_path
 from .timefmt import format_ts
 
 
@@ -27,28 +28,36 @@ def record(op: str, key: str, payload: Any = None, ok: bool = True, result: Any 
         entry["result"] = result
     try:
         path = write_log_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(path.parent)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+        # 留痕里有 issue 正文和评论原文，别按 umask 落成同组可读
+        path.chmod(0o600)
     except OSError:
         pass
 
 
 def tail(limit: int = 20) -> list[dict]:
-    """回查最近 limit 条留痕，新的在前。"""
+    """回查最近 limit 条留痕，新的在前。
+
+    日志只追加不轮转，会一直长。用定长队列滚动，内存不随文件大小涨。
+    """
     path = write_log_path()
     if not path.exists():
         return []
-    rows: list[dict] = []
+    kept: deque[str] = deque(maxlen=max(limit, 1))
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except ValueError:
-                continue
-            entry["ts"] = format_ts(entry.get("ts"))
-            rows.append(entry)
-    return rows[-limit:][::-1]
+            if line:
+                kept.append(line)
+
+    rows: list[dict] = []
+    for line in kept:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        entry["ts"] = format_ts(entry.get("ts"))
+        rows.append(entry)
+    return rows[::-1]

@@ -10,18 +10,39 @@ import re
 
 from .errors import JiraCliError
 
-#: 不加引号、原样进 JQL 的函数式取值
-FUNCTION_VALUES = {
-    "currentUser()",
-    "openSprints()",
-    "closedSprints()",
-    "futureSprints()",
-    "unreleasedVersions()",
-    "releasedVersions()",
-    "membersOf",
-    "EMPTY",
-    "NULL",
-}
+#: 不加引号、原样进 JQL 的裸关键字
+FUNCTION_VALUES = {"EMPTY", "NULL"}
+
+#: 允许原样透传的 JQL 函数名（小写比对）
+FUNCTION_NAMES = frozenset(
+    {
+        "currentuser",
+        "opensprints",
+        "closedsprints",
+        "futuresprints",
+        "unreleasedversions",
+        "releasedversions",
+        "membersof",
+        "currentlogin",
+        "now",
+        "startofday",
+        "endofday",
+        "startofweek",
+        "endofweek",
+        "startofmonth",
+        "endofmonth",
+    }
+)
+
+#: 一个**完整且单独**的函数调用：fn() 或 fn(参数)。
+#: 参数里不许出现括号，出现引号则必须成对且不含转义——
+#: 否则 `currentUser() OR project = SECRET ()` 这种整段都会被当函数放行，
+#: 原样拼进 JQL（查询范围被悄悄放大）。
+_FUNCTION_CALL_RE = re.compile(
+    r'^([A-Za-z][A-Za-z0-9_]*)\('
+    r'(?:"[^"\\]*"|\'[^\'\\]*\'|[^()"\'\\]*)'
+    r'\)$'
+)
 
 #: 相对日期，如 -7d / -2w / 1h；JQL 原生支持，不能加引号
 _RELATIVE_DATE_RE = re.compile(r"^-?\d+[mhdwMy]$")
@@ -40,13 +61,18 @@ def escape_value(value: str) -> str:
 
 
 def quote(value: str) -> str:
-    """按需加引号。函数式取值、相对日期、纯数字保持裸值。"""
+    """按需加引号。函数式取值、相对日期、纯数字保持裸值，其余一律转义。
+
+    放行必须**按白名单精确判定**，不能用 `endswith("()")` 这类形状判断：
+    后者会把 `currentUser() OR project = SECRET ()` 整段原样放进 JQL。
+    """
     value = str(value).strip()
     if not value:
         return '""'
-    if value in FUNCTION_VALUES or value.endswith("()"):
+    if value.upper() in FUNCTION_VALUES:
         return value
-    if value.startswith("membersOf("):
+    matched = _FUNCTION_CALL_RE.match(value)
+    if matched and matched.group(1).lower() in FUNCTION_NAMES:
         return value
     if _RELATIVE_DATE_RE.match(value):
         return value

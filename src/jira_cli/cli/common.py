@@ -16,8 +16,8 @@ from ..errors import JiraCliError
 from ..fields import build_field_map, resolve_one, reverse_field_map
 from ..errors import ResolveError
 from ..markup import Codec, get_codec
-from ..meta_cache import cached
-from ..timefmt import set_timezone
+from ..meta_cache import cached, set_scope
+from ..timefmt import DEFAULT_TZ, set_timezone
 from ..output import note
 
 #: -o 的取值。声明在各子命令上，因此可以后置在命令末尾
@@ -27,16 +27,32 @@ FORMAT_OPTION = typer.Option(
 
 
 class Ctx:
-    """一次调用的运行时上下文。backend / codec 都是懒加载。"""
+    """一次调用的运行时上下文。config / backend / codec 都是懒加载。
 
-    def __init__(self, config: Config) -> None:
-        self.config = config
-        # 时间戳格式化是进程级设置，一次调用只有一份配置
-        set_timezone(config.timezone)
+    **config 也懒加载**，否则 root callback 会在每条命令前无条件读配置：
+    一个写坏的值（`config set download-limit-mb abc`）或一处 TOML 语法
+    错误，就能把「专门用来修配置的命令」自己也挡在门外，用户只剩手工
+    编辑文件一条路。现在 config set / config init 不碰 .config 就不触发加载。
+    """
+
+    def __init__(self, **overrides: Any) -> None:
+        self._overrides = overrides
+        self._config: Optional[Config] = None
         self._backend: Optional[Backend] = None
         self._codec: Optional[Codec] = None
         self._field_map: Optional[dict[str, str]] = None
         self._rev_field_map: Optional[dict[str, str]] = None
+
+    @property
+    def config(self) -> Config:
+        if self._config is None:
+            config = load_config(**self._overrides)
+            # 时区与缓存命名空间都是进程级设置，一次调用只有一份配置
+            if not set_timezone(config.timezone):
+                note(f"时区「{config.timezone}」无法识别，时间戳仍按 {DEFAULT_TZ} 输出")
+            set_scope(config.url)
+            self._config = config
+        return self._config
 
     @property
     def backend(self) -> Backend:
@@ -108,7 +124,20 @@ def make_ctx(
     token: Optional[str] = None,
     insecure: Optional[bool] = None,
 ) -> Ctx:
-    return Ctx(load_config(url=url, token=token, insecure=insecure))
+    """只记下命令行覆盖值，真正加载推迟到第一次访问 ctx.config。"""
+    return Ctx(url=url, token=token, insecure=insecure)
+
+
+def check_limit(value: int) -> int:
+    """校验 -n/--limit。
+
+    0 或负数会让翻页循环**一次请求都不发**，却返回 total=0、issues=[]——
+    这个输出和「确实没有匹配」一模一样，调用方（尤其是 AI）会直接据此
+    下结论。宁可报错。
+    """
+    if value < 1:
+        raise typer.BadParameter("-n/--limit 至少是 1")
+    return value
 
 
 def parse_field_args(pairs: list[str]) -> dict[str, str]:

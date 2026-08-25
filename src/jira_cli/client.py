@@ -12,7 +12,7 @@ from __future__ import annotations
 import mimetypes
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any, Sequence
 
 import requests
 
@@ -79,17 +79,17 @@ class Backend(ABC):
         return self._handle(resp)
 
     def _handle(self, resp: requests.Response) -> Any:
-        if resp.status_code == 204 or not resp.content:
-            return None
+        # 先解析、**再判状态**。反过来写的话「空 body」这一条会先命中，
+        # 于是无正文的 403/502 被当成成功返回 None，错误就此消失
         try:
-            payload = resp.json()
+            payload = resp.json() if resp.content else None
         except ValueError:
             payload = None
 
         if resp.ok:
             return payload
 
-        detail = format_api_errors(payload) or (resp.text or "")[:500]
+        detail = format_api_errors(payload) or (resp.text or "")[:500] or "响应无正文"
 
         if resp.status_code in (401, 403):
             raise AuthError(
@@ -265,19 +265,32 @@ class ServerBackend(Backend):
 
         附件 content URL 必须带认证头才能取，所以不能把裸链接丢给调用方
         自己下——这也是本工具必须落盘的原因。
+
+        先写 .part 再改名：中途断网或 Ctrl-C 不会在落点留下一个大小不对的
+        半截文件——它看起来是「下好了」，读的人拿到的却是截断内容。
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
-        with self.session.get(content_url, stream=True, timeout=TIMEOUT) as resp:
-            if not resp.ok:
-                raise ApiError(
-                    f"附件下载失败 HTTP {resp.status_code}：{content_url}",
-                    status=resp.status_code,
-                )
-            size = 0
-            with dest.open("wb") as fh:
-                for chunk in resp.iter_content(chunk_size=65536):
-                    fh.write(chunk)
-                    size += len(chunk)
+        part = dest.with_name(dest.name + ".part")
+        try:
+            with self.session.get(content_url, stream=True, timeout=TIMEOUT) as resp:
+                if not resp.ok:
+                    raise ApiError(
+                        f"附件下载失败 HTTP {resp.status_code}：{content_url}",
+                        status=resp.status_code,
+                    )
+                size = 0
+                with part.open("wb") as fh:
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        fh.write(chunk)
+                        size += len(chunk)
+        except requests.RequestException as exc:
+            # 这条路径不经过 request()，不包一层就会直接吐 requests 的 traceback
+            part.unlink(missing_ok=True)
+            raise ApiError(f"附件下载失败：{exc}") from exc
+        except BaseException:
+            part.unlink(missing_ok=True)
+            raise
+        part.replace(dest)
         return size
 
 

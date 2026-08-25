@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import fnmatch
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
 import typer
@@ -31,7 +31,7 @@ from ..jql import JQL, normalize_user
 from ..meta_cache import cached
 from ..output import emit, note
 from .. import writelog
-from .common import FORMAT_OPTION, get_ctx, parse_field_args
+from .common import FORMAT_OPTION, check_limit, get_ctx, parse_field_args
 from .meta import transition_rows
 
 app = typer.Typer(help="查询与操作 issue", no_args_is_help=True)
@@ -89,6 +89,7 @@ def list_cmd(
     fmt: str = FORMAT_OPTION,
 ) -> None:
     """按条件查询 issue。封装参数与 --jql 可同时使用。"""
+    check_limit(limit)
     c = get_ctx(ctx)
     builder = (
         JQL()
@@ -166,6 +167,15 @@ def show_cmd(
     if only:
         keep = {f.strip() for f in only.split(",")} | {"key", "url"}
         data = {k: v for k, v in data.items() if k in keep}
+        # --fields 限定了服务端返回的字段，这几个开关就没有数据可依附了。
+        # 静默忽略会让人以为「这条 issue 没有子任务/关联」
+        ignored = [
+            flag
+            for flag, on in (("--custom", custom), ("--links", links), ("--subtasks", subtasks))
+            if on
+        ]
+        if ignored:
+            note(f"--fields 已限定返回字段，{' / '.join(ignored)} 本次不生效")
 
     if links:
         rows = issue_links(detail_raw.get("fields") or {})
@@ -244,9 +254,11 @@ def create_cmd(
         )
         raise
 
+    # 建单一成功就留痕，再去传附件。反过来的话，附件上传失败会让整条
+    # create 完全没有记录——issue 已经真建出来了，唯一的护栏里却查不到
     key = created.get("key", "")
-    attached = _attach(c, key, list(attach or [])) if attach else []
     writelog.record("create", key, payload, ok=True, result={"key": key})
+    attached = _attach(c, key, list(attach or [])) if attach else []
 
     emit(prune({"key": key, "url": c.issue_url(key), "attached": attached or None}), fmt if fmt != "table" else "yaml")
 
@@ -498,6 +510,9 @@ def download_cmd(
     plan = []
     for att in selected:
         dest = target_dir / names[str(att["id"])]
+        # 纵深防御：_safe_name 已经保证是纯基名，这里再确认一次落点没被穿出去
+        if dest.parent.resolve() != target_dir:
+            raise JiraCliError(f"附件落点异常，拒绝写入：{dest}")
         size = att.get("size") or 0
         cached = (
             not force and dest.exists() and dest.stat().st_size == size
@@ -519,7 +534,13 @@ def download_cmd(
         if cached:
             reused += 1
         else:
-            size = c.backend.download_attachment(att["content"], dest)
+            content_url = att.get("content")
+            if not content_url:
+                raise JiraCliError(
+                    f"附件 {att.get('filename')}（id={att.get('id')}）没有下载地址",
+                    "该实例可能限制了附件访问，用 issue show --raw 看原始响应确认。",
+                )
+            size = c.backend.download_attachment(content_url, dest)
             fetched += 1
         files.append(
             {
@@ -555,7 +576,7 @@ def _human_size(size: int) -> str:
         if value < 1024 or unit == "TB":
             return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
         value /= 1024
-    return f"{size} B"
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _oversize_hint(key: str, pending: list, limit_mb: int) -> str:
@@ -587,24 +608,41 @@ def _download_dir(c: Any, key: str, directory: Optional[Path]) -> Path:
     return (root / key).resolve()
 
 
+def _safe_name(raw: str, att_id: str) -> str:
+    """把 Jira 返回的 filename 收敛成一个纯基名。
+
+    **附件名由上传者控制，不能直接拿来拼路径**：`Path(dir) / "../../x"`
+    会逃出落点，`Path(dir) / "/etc/cron.d/x"` 更是直接丢弃落点、按绝对
+    路径写。本工具是给 AI 自动调用的，一句 issue download 就落盘，
+    落点必须封死——只取基名，目录成分一律丢掉。
+    """
+    name = (raw or "").replace("\\", "/").strip()
+    name = PurePosixPath(name).name if name else ""
+    if name in ("", ".", ".."):
+        return f"attachment-{att_id}"
+    return name
+
+
 def _dest_names(attachments: list[dict]) -> dict[str, str]:
     """{附件 id: 落盘文件名}。
 
     **Jira 允许同一 issue 挂同名附件**（实测：两个 same-name.txt，
     id 不同、大小不同）。直接用 filename 落盘会互相覆盖——报告下载 N 个，
     磁盘上只有 1 个，且大小与报告对不上。同名的一律加 id 区分。
+
+    判重在**净化之后**做：`a/x.txt` 与 `b/x.txt` 净化后同名，必须一起
+    加 id 区分，否则又回到互相覆盖。
     """
+    safe = {str(att.get("id")): _safe_name(att.get("filename"), str(att.get("id"))) for att in attachments}
+
     counts: dict[str, int] = {}
-    for att in attachments:
-        name = att.get("filename") or ""
+    for name in safe.values():
         counts[name] = counts.get(name, 0) + 1
 
     out: dict[str, str] = {}
-    for att in attachments:
-        att_id = str(att.get("id"))
-        name = att.get("filename") or f"attachment-{att_id}"
+    for att_id, name in safe.items():
         if counts.get(name, 0) > 1:
-            stem = Path(name)
+            stem = PurePosixPath(name)
             out[att_id] = f"{stem.stem}.{att_id}{stem.suffix}"
         else:
             out[att_id] = name

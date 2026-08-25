@@ -12,11 +12,14 @@ from __future__ import annotations
 import json
 import re
 import sys
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 import yaml
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
+
+from .errors import JiraCliError
 
 FORMATS = ("table", "yaml", "json", "md")
 DEFAULT_FORMAT = "table"
@@ -137,6 +140,13 @@ def emit(
           data 本身是行列表就用 data，否则降级到 yaml（嵌套结构画不成表）
     """
     fmt = (fmt or DEFAULT_FORMAT).lower()
+    if fmt not in FORMATS:
+        # 静默降级最坑调用方：-o josn 会安静地渲染成表格，
+        # 而 AI 拿到手还当 JSON 去 parse
+        raise JiraCliError(
+            f"未知的输出格式：{fmt}",
+            f"可用格式：{' / '.join(FORMATS)}",
+        )
 
     if fmt == "yaml":
         _out.print(to_yaml(data), markup=False, highlight=False)
@@ -163,14 +173,17 @@ def _is_row_list(data: Any) -> bool:
     return isinstance(data, list) and all(isinstance(item, dict) for item in data)
 
 
+# 消息里的方括号必须转义后再交给 rich：Jira 的错误正文、项目名、附件名
+# 里带 [] 很常见，而 [red] / [link] 这种恰好是合法样式名的会被**静默吞掉**，
+# [/] 更是直接抛 MarkupError——错误信息自己把自己弄崩了
 def note(message: str) -> None:
     """诊断信息走 stderr，不污染 stdout 的结构化输出。"""
-    _err.print(f"[dim]{message}[/dim]")
+    _err.print(f"[dim]{escape(message)}[/dim]")
 
 
 def warn(message: str) -> None:
-    _err.print(f"[yellow]警告：[/yellow]{message}")
+    _err.print(f"[yellow]警告：[/yellow]{escape(message)}")
 
 
 def fail(message: str) -> None:
-    _err.print(f"[red]错误：[/red]{message}")
+    _err.print(f"[red]错误：[/red]{escape(message)}")

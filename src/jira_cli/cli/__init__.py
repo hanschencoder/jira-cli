@@ -75,11 +75,13 @@ def commands_cmd(fmt: str = FORMAT_OPTION) -> None:
 
 
 def main() -> None:
-    """入口。把本工具主动抛出的错误转成 stderr + 规范退出码。"""
+    """入口。把本工具主动抛出的错误转成 stderr + 规范退出码。
+
+    Ctrl-C 不在这里处理：click 在 standalone 模式下已经把 KeyboardInterrupt
+    捕获成 Abort 并自行退出，外层这一层根本收不到。
+    """
     try:
         app()
     except JiraCliError as exc:
         fail(exc.render())
         sys.exit(exc.exit_code)
-    except KeyboardInterrupt:
-        sys.exit(130)

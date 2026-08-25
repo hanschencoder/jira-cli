@@ -9,7 +9,7 @@ import typer
 from ..fields import prune
 from ..meta_cache import cached, clear
 from ..output import emit, note
-from .common import FORMAT_OPTION, get_ctx
+from .common import FORMAT_OPTION, check_limit, get_ctx
 
 app = typer.Typer(help="查询元数据（项目/类型/状态/字段/流转）", no_args_is_help=True)
 
@@ -77,6 +77,7 @@ def users_cmd(
     fmt: str = FORMAT_OPTION,
 ) -> None:
     """搜索用户。assignee 要填的是这里的 name（登录名）。"""
+    check_limit(limit)
     c = get_ctx(ctx)
     data = c.backend.search_users(query, limit)
     emit(

@@ -87,6 +87,27 @@ def prune(value: Any) -> Any:
     return value
 
 
+def normalize_newlines(value: Any) -> Any:
+    """把多行文本收敛成「LF + 无行尾空白」，字符串以外原样返回。
+
+    两者都会让 YAML 放弃块字面量、退化成 `"步骤一\\r\\n步骤二 "` 这种双引号
+    转义形式——既难读又更费 token：
+
+      \\r      Jira 返回的多行文本是 CRLF
+      行尾空格 块字面量表示不了尾随空白，PyYAML 只能改用引号形式
+
+    只用在**展示路径**（自定义字段）上：这里的值是给人和 AI 读的，
+    去掉行尾空白无损。要原样写回 Jira 请走 -f，不经过这里。
+    description 与评论走 codec 时已经做过换行归一化。
+    """
+    if isinstance(value, str):
+        text = value.replace("\r\n", "\n").replace("\r", "\n")
+        return "\n".join(line.rstrip() for line in text.split("\n"))
+    if isinstance(value, list):
+        return [normalize_newlines(v) for v in value]
+    return value
+
+
 def user_name(user: Any) -> str:
     """用户对象 -> 登录名。
 
@@ -232,7 +253,7 @@ def custom_fields(fields: dict, field_map: dict[str, str]) -> dict:
             value = _named(value) or value
         elif isinstance(value, list):
             value = [_named(v) for v in value]
-        out[name] = value
+        out[name] = normalize_newlines(value)
     return out
 
 
@@ -419,7 +440,11 @@ def build_schema_map(fields: Iterable[dict]) -> dict[str, dict]:
 
 
 #: 这些标准字段的取值要包成 {"name": ...}
-_NAME_WRAPPED = {"priority", "resolution", "issuetype", "status", "assignee", "reporter", "parent"}
+_NAME_WRAPPED = {"priority", "resolution", "issuetype", "status", "assignee", "reporter"}
+
+#: parent 要的是 {"key": "ABC-1"}。它的 schema type 是 issuelink，落不进
+#: 下面任何一个分支，按 name 包或原样传字符串都会得到一个 400
+_KEY_WRAPPED = {"parent"}
 
 
 def coerce_value(field_id: str, value: str, schema: dict | None = None) -> Any:
@@ -431,6 +456,9 @@ def coerce_value(field_id: str, value: str, schema: dict | None = None) -> Any:
     """
     schema = schema or {}
     stype = schema.get("type")
+
+    if field_id in _KEY_WRAPPED:
+        return {"key": value.strip()}
 
     if stype == "array":
         items = [v.strip() for v in value.split(",") if v.strip()]

@@ -51,11 +51,18 @@ def parse_timezone(spec: str) -> Optional[timezone]:
         return None
 
 
-def set_timezone(spec: str) -> None:
+def set_timezone(spec: str) -> bool:
+    """设置输出时区，返回是否识别成功。
+
+    识别不了时保持原设置并返回 False，由调用方决定怎么提示——静默回退
+    会让 `JIRA_TZ` 拼错（Asia/Shangai）表现成「配置生效了但时间不对」。
+    """
     tz = parse_timezone(spec)
-    if tz is not None:
-        global _target_tz
-        _target_tz = tz  # type: ignore[assignment]
+    if tz is None:
+        return not (spec or "").strip()
+    global _target_tz
+    _target_tz = tz  # type: ignore[assignment]
+    return True
 
 
 def format_ts(value: Any) -> Any:

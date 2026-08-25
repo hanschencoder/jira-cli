@@ -8,11 +8,10 @@ from typing import Optional
 import typer
 
 from ..client import ServerBackend, detect_deployment
-from ..config import Config, load_file, normalize_key, save_file
-from ..config import load as load_config
-from ..errors import JiraCliError
+from ..config import Config, coerce_setting, load_file, normalize_key, save_file
+from ..errors import ConfigError, JiraCliError
 from ..fields import resolve_one
-from ..output import FORMATS, emit, note
+from ..output import emit, note
 from ..timefmt import DEFAULT_TZ
 from .common import FORMAT_OPTION, get_ctx
 
@@ -75,7 +74,12 @@ def init_cmd(
     insecure: bool = typer.Option(False, "-k", "--insecure", help="跳过 TLS 校验"),
 ) -> None:
     """交互式引导：填连接信息，自动探测部署形态与渲染器，选默认项目。"""
-    existing = load_file()
+    # init 就是用来重建配置的，文件坏掉时更要能跑，不能被解析失败挡在门外
+    try:
+        existing = load_file()
+    except ConfigError:
+        note("现有配置文件无法解析，本次 init 将用新内容覆盖它。")
+        existing = {}
 
     url = url or typer.prompt("Jira 地址", default=str(existing.get("url") or "")).strip()
     if not url.startswith("http"):
@@ -133,7 +137,10 @@ def init_cmd(
         else:
             raise JiraCliError("多次未能识别项目，请重新运行 jira-cli config init")
 
-    path = save_file(
+    # 在已有配置之上覆盖，而不是整份替换——否则重跑一次 init（比如只想
+    # 换 token）就会把 download-dir / download-limit-mb 这些静默抹掉
+    settings = {str(k).replace("-", "_"): v for k, v in existing.items()}
+    settings.update(
         {
             "url": url,
             "token": token,
@@ -141,10 +148,11 @@ def init_cmd(
             "deployment": "server",
             "renderer": renderer,
             "default_project": default_project,
-            "timezone": DEFAULT_TZ,
             "insecure": insecure,
         }
     )
+    settings.setdefault("timezone", DEFAULT_TZ)
+    path = save_file(settings)
     note(f"已写入 {path}（权限 600）")
 
 
@@ -155,8 +163,8 @@ def set_cmd(
 ) -> None:
     """写入单个配置项。"""
     field = normalize_key(key)
-    data = {k.replace("-", "_"): v for k, v in load_file().items()}
-    data[field] = value
+    data = {str(k).replace("-", "_"): v for k, v in load_file().items()}
+    data[field] = coerce_setting(field, value)
     path = save_file(data)
     note(f"已更新 {field} → {path}")
 

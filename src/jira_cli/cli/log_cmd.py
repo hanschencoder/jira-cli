@@ -6,7 +6,7 @@ import typer
 
 from ..output import emit
 from ..writelog import tail
-from .common import FORMAT_OPTION
+from .common import FORMAT_OPTION, check_limit
 
 app = typer.Typer(help="回查写操作留痕")
 
@@ -20,6 +20,7 @@ def log_cmd(
     """列出最近的写操作（新的在前）。"""
     if ctx.invoked_subcommand:
         return
+    check_limit(limit)
     rows = tail(limit)
     emit(
         {"total": len(rows), "entries": rows},
