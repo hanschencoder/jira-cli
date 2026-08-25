@@ -2,7 +2,7 @@
 #
 # jira-cli 卸载脚本。
 #
-#   curl -fsSL <REPO>/raw/main/uninstall.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hanschencoder/jira-cli/main/uninstall.sh | bash
 #
 # 移除：① jira-cli 命令；② skill 正本及各工具软链；③ 配置（含 PAT）。
 #

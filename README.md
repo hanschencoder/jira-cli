@@ -22,7 +22,7 @@
 ## 一键安装
 
 ```bash
-curl -fsSL <TODO: git 远端地址>/raw/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hanschencoder/jira-cli/main/install.sh | bash
 ```
 
 脚本会：① 用 uv 安装 `jira-cli` 命令；② 安装配套 skill 到 `~/.agents/skills/jira-cli`，并为已安装的 AI 工具（Claude Code / Cursor / Codex / Gemini / Copilot）软链到各自 skill 目录（重启工具后生效）。
@@ -35,10 +35,10 @@ curl -fsSL <TODO: git 远端地址>/raw/main/install.sh | bash
 
 ```bash
 # 用 uv 装成全局命令（推荐）
-uv tool install git+<TODO: git 远端地址>
+uv tool install git+https://github.com/hanschencoder/jira-cli.git
 
 # 或克隆后开发模式
-git clone <TODO: git 远端地址> && cd jira-cli && uv pip install -e .
+git clone https://github.com/hanschencoder/jira-cli.git && cd jira-cli && uv pip install -e .
 
 # skill 手动安装
 cp -r skills/jira-cli ~/.agents/skills/jira-cli
@@ -48,7 +48,7 @@ cp -r skills/jira-cli ~/.agents/skills/jira-cli
 ## 卸载
 
 ```bash
-curl -fsSL <TODO: git 远端地址>/raw/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hanschencoder/jira-cli/main/uninstall.sh | bash
 ```
 
 会移除命令、skill 正本与各工具软链，并删除配置（含 token）。

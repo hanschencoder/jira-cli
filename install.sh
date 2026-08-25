@@ -2,7 +2,7 @@
 #
 # jira-cli 一键安装脚本。
 #
-#   curl -fsSL <REPO>/raw/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hanschencoder/jira-cli/main/install.sh | bash
 #
 # 完成两件事：
 #   1. 用 uv 安装 jira-cli 命令
@@ -11,7 +11,7 @@
 #
 set -euo pipefail
 
-REPO_URL="${JIRA_CLI_REPO:-<TODO: git 远端地址>}"
+REPO_URL="${JIRA_CLI_REPO:-https://github.com/hanschencoder/jira-cli.git}"
 SKILL_ROOT="${JIRA_CLI_SKILL_DIR:-$HOME/.agents/skills}"
 
 # 需要软链到此正本的各工具 skill 目录（仅当其父目录已存在，即该工具已安装时才建链）。
@@ -31,10 +31,6 @@ err()  { printf '\033[31m错误:\033[0m %s\n' "$*" >&2; exit 1; }
 command -v git >/dev/null 2>&1 || err "需要 git"
 command -v uv  >/dev/null 2>&1 || \
   err "需要 uv，请先安装：curl -LsSf https://astral.sh/uv/install.sh | sh"
-
-case "$REPO_URL" in
-  *TODO*) err "install.sh 里的 REPO_URL 还是占位符，请先填入 git 远端地址（或设 JIRA_CLI_REPO 环境变量）" ;;
-esac
 
 # ---- 克隆仓库到临时目录 ----
 TMP="$(mktemp -d)"
