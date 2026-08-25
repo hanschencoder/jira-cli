@@ -233,20 +233,45 @@ files:
 
 没有匹配时**不报错**，正常返回 `downloaded: 0` 且 `files: []`，stderr 提示「没有匹配的附件」——脚本里不会因为空结果中断。
 
-### 7.3 铁律：不要试图用 URL 下载
+### 7.3 下载到哪里（默认路径跟着当前目录走）
+
+不带 `--dir` 时，落点是：
+
+```
+<当前工作目录>/jira-attachments/<ISSUE-KEY>/
+```
+
+**这是相对当前工作目录的，不是固定位置。** 同一条命令在不同目录下跑，落点不同：
+
+```bash
+cd /tmp/a && jira-cli issue download ABC-123    # → /tmp/a/jira-attachments/ABC-123/
+cd /tmp/b && jira-cli issue download ABC-123    # → /tmp/b/jira-attachments/ABC-123/
+```
+
+`--dir` 传相对路径同样相对当前目录（`--dir ./logs` → `<CWD>/logs`），传绝对路径才固定（`--dir /tmp/dl` → `/tmp/dl`）。
+
+**风险**：在用户的代码仓库里跑，附件就落进代码仓库，一堆日志截图突然出现在 `git status` 里。
+
+因此：
+
+1. **不确定自己在哪，就显式传绝对路径**：`--dir /tmp/jira-dl`
+2. **每次都看输出的 `dir` 字段**——它是解析后的绝对路径，不用猜
+3. 用 `files[].path`（也是绝对路径）去读文件，别自己拼相对路径
+
+### 7.4 铁律：不要试图用 URL 下载
 
 `attachments` 的输出里**故意不含下载链接**。Jira Server 的附件地址必须带 `Authorization: Bearer` 头才能取，浏览器能下是因为有 session cookie。
 
 所以：**不要去 `issue show --raw` 里翻 `content` 字段然后 `curl` 或 WebFetch**——只会拿到 401 或登录页，白白浪费一轮。附件只能通过 `issue download` 拿。
 
-### 7.4 拿到文件之后
+### 7.5 拿到文件之后
 
 - 文本 / 日志：直接 Read；**超过几 MB 先 `grep -n` 定位行号再局部读**，别整个塞进上下文
 - 图片：Read 可以直接看
 - 压缩包：先 `unzip -l` / `7z l` 看清单，再解需要的那部分
-- 下载目录默认在**当前工作目录**下，跑命令前先确认自己在哪，别把文件撒到用户的代码仓库里
+- 落点见 7.3——默认跟着当前工作目录走
 
-### 7.5 上传附件
+### 7.6 上传附件
 
 ```bash
 jira-cli issue update ABC-123 --attach ./report.html --attach ./screenshot.png
