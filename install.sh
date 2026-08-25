@@ -42,6 +42,36 @@ git clone --depth 1 "$REPO_URL" "$TMP/jira-cli"
 info "用 uv 安装 jira-cli ..."
 uv tool install --force "$TMP/jira-cli"
 
+# ---- 清理元数据缓存 ----
+# 缓存里是上一个版本拉下来的项目/字段/状态列表。版本之间缓存的**文件命名**
+# 和**存的结构**都可能变（比如按实例分文件之后，旧的 projects.json 就成了
+# 谁也不会再读的孤儿），装完就清一次最省心。
+#
+# 只删 cache/ 子目录：同级的 config.toml 里有 PAT、write-log.jsonl 是写操作
+# 留痕，两个都不能碰。
+#
+# JIRA_CLI_CONFIG_DIR 一旦设了就**只**清它——那个变量的含义是「配置都在这
+# 儿」，此时再去动平台默认路径属于越权（卸载可以清干净，安装不行）。
+if [ -n "${JIRA_CLI_CONFIG_DIR:-}" ]; then
+  META_CACHE_DIRS=("$JIRA_CLI_CONFIG_DIR/cache")
+else
+  META_CACHE_DIRS=(
+    "$HOME/.config/jira-cli/cache"                       # Linux
+    "$HOME/Library/Application Support/jira-cli/cache"   # macOS
+  )
+fi
+cleared=0
+for d in "${META_CACHE_DIRS[@]}"; do
+  if [ -d "$d" ]; then
+    rm -rf "$d"
+    info "已清理元数据缓存 $d"
+    cleared=1
+  fi
+done
+if [ "$cleared" -eq 0 ]; then
+  info "无元数据缓存需要清理"
+fi
+
 # ---- 安装 skill（正本）----
 info "安装 skill 到 $SKILL_ROOT/jira-cli ..."
 mkdir -p "$SKILL_ROOT"

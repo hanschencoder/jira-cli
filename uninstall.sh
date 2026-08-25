@@ -51,7 +51,7 @@ CONFIG_DIRS=(
   "$HOME/.config/jira-cli"                          # Linux
   "$HOME/Library/Application Support/jira-cli"      # macOS
   "${JIRA_CLI_CACHE_DIR:-}"
-  "$HOME/.cache/jira-cli"                           # Linux（元数据缓存与下载的附件）
+  "$HOME/.cache/jira-cli"                           # Linux（下载的附件；元数据缓存在上面的配置目录下）
   "$HOME/Library/Caches/jira-cli"                   # macOS
 )
 removed=0
