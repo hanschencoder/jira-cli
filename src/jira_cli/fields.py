@@ -293,12 +293,28 @@ def resolve_one(
     needle = str(value).strip()
     lowered = needle.lower()
 
-    for item in candidates:
-        if str(item.get("id")) == needle:
-            return item
-        for key in keys:
-            if str(item.get(key) or "").lower() == lowered:
-                return item
+    # 逐字段整轮扫描，而不是逐条候选依次比对各字段。
+    # Jira **不强制项目名唯一**，且允许一个项目的名称等于另一个项目的 KEY
+    # （JRASERVER-69362，2025-03 以 Low Engagement 关闭，即不会修）。
+    # 逐条比对的写法下，"FOO" 命中哪个项目取决于列表顺序——同一条命令可能
+    # 落到不同项目且毫无提示。按 id → key → name 的优先级整轮扫描，
+    # 并在同一轮里撞到多个时报错，才不会静默选错。
+    for field in ("id",) + tuple(keys):
+        matches = [
+            item
+            for item in candidates
+            if str(item.get(field) or "").lower() == lowered
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            listing = ", ".join(
+                f"{m.get(keys[0])}（{m.get('name')}）" for m in matches
+            )
+            raise ResolveError(
+                f"{kind}「{value}」对应多个：{listing}",
+                f"这些{kind}的 {field} 相同。请改用唯一的标识重试。",
+            )
     # 退一步做包含匹配，且必须唯一，避免歧义下猜错
     partial = [
         item
