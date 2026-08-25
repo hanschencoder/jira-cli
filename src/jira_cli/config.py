@@ -32,6 +32,7 @@ ENV_OVERRIDES = {
     "auth_type": "JIRA_AUTH_TYPE",
     "default_project": "JIRA_PROJECT",
     "timezone": "JIRA_TZ",
+    "download_dir": "JIRA_DOWNLOAD_DIR",
 }
 
 
@@ -45,6 +46,23 @@ def config_dir() -> Path:
 
 def config_path() -> Path:
     return config_dir() / CONFIG_FILENAME
+
+
+def cache_dir() -> Path:
+    """缓存目录。JIRA_CLI_CACHE_DIR 覆盖平台默认值。"""
+    override = os.environ.get("JIRA_CLI_CACHE_DIR")
+    if override:
+        return Path(override).expanduser()
+    return Path(platformdirs.user_cache_dir(APP_NAME))
+
+
+def default_download_dir() -> Path:
+    """附件默认落点的根目录，实际文件放在 <root>/<ISSUE-KEY>/ 下。
+
+    放缓存目录而不是当前工作目录：附件是可重新拉取的派生数据，
+    落在固定位置才能跨次复用，也不会撒进用户的代码仓库。
+    """
+    return cache_dir() / "attachments"
 
 
 def write_log_path() -> Path:
@@ -69,6 +87,8 @@ class Config:
     default_project: str = ""
     #: 时间戳输出时换算到的时区。支持 +08:00 / +0800 / Asia/Shanghai
     timezone: str = "+08:00"
+    #: 附件默认落点根目录。留空则用 default_download_dir()
+    download_dir: str = ""
     #: 跳过 TLS 校验
     insecure: bool = False
 

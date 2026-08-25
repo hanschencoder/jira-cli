@@ -211,8 +211,11 @@ jira-cli issue download ABC-123 --match '*.log' -o yaml
 # 按 id 精确要某一个（id 来自第一步的清单）
 jira-cli issue download ABC-123 --id 6055369 -o yaml
 
-# 指定目录（平铺放置，不再套 jira-attachments/<KEY>/ 那层）
-jira-cli issue download ABC-123 --dir ./logs -o yaml
+# 指定目录（平铺放置，不再套 <KEY>/ 那层）
+jira-cli issue download ABC-123 --dir /tmp/logs -o yaml
+
+# 忽略本地缓存强制重下
+jira-cli issue download ABC-123 --force -o yaml
 ```
 
 `--match` 与 `--id` 可叠加。输出：
@@ -233,30 +236,41 @@ files:
 
 没有匹配时**不报错**，正常返回 `downloaded: 0` 且 `files: []`，stderr 提示「没有匹配的附件」——脚本里不会因为空结果中断。
 
-### 7.3 下载到哪里（默认路径跟着当前目录走）
+### 7.3 下载到哪里 + 本地缓存
 
-不带 `--dir` 时，落点是：
+不带 `--dir` 时，落点是**固定的缓存目录**，与当前工作目录无关：
 
 ```
-<当前工作目录>/jira-attachments/<ISSUE-KEY>/
+Linux   ~/.cache/jira-cli/attachments/<ISSUE-KEY>/
+macOS   ~/Library/Caches/jira-cli/attachments/<ISSUE-KEY>/
 ```
 
-**这是相对当前工作目录的，不是固定位置。** 同一条命令在不同目录下跑，落点不同：
+所以在任何目录下跑同一条命令，落点都一样，**不会把附件撒进用户的代码仓库**。
+
+想换地方，两种方式：
 
 ```bash
-cd /tmp/a && jira-cli issue download ABC-123    # → /tmp/a/jira-attachments/ABC-123/
-cd /tmp/b && jira-cli issue download ABC-123    # → /tmp/b/jira-attachments/ABC-123/
+# 改默认根目录（长期）。实际文件仍放在 <根目录>/<KEY>/ 下
+jira-cli config set download-dir /data/jira-dl
+
+# 只这一次（平铺放置，不再套 <KEY>/ 那层）
+jira-cli issue download ABC-123 --dir /tmp/logs
 ```
 
-`--dir` 传相对路径同样相对当前目录（`--dir ./logs` → `<CWD>/logs`），传绝对路径才固定（`--dir /tmp/dl` → `/tmp/dl`）。
+**下载前会自动检查本地缓存**：同路径且大小一致的文件直接跳过，输出里标 `cached: true`，stderr 提示复用了几个。所以对同一个 issue 反复跑 `download` 很便宜，不会重复拉流量。
 
-**风险**：在用户的代码仓库里跑，附件就落进代码仓库，一堆日志截图突然出现在 `git status` 里。
+```yaml
+downloaded: 0     # 本次新下载的
+cached: 4         # 复用本地的
+total_size: 128
+files:
+- path: /home/u/.cache/jira-cli/attachments/ABC-123/data.csv
+  cached: true
+```
 
-因此：
+要强制重下加 `--force`。本地文件损坏或被截断时（大小对不上）会**自动重下**，不用手动清。
 
-1. **不确定自己在哪，就显式传绝对路径**：`--dir /tmp/jira-dl`
-2. **每次都看输出的 `dir` 字段**——它是解析后的绝对路径，不用猜
-3. 用 `files[].path`（也是绝对路径）去读文件，别自己拼相对路径
+无论落在哪，都用输出里的 `dir` 和 `files[].path`（都是绝对路径）去读文件，别自己拼。
 
 ### 7.4 铁律：不要试图用 URL 下载
 
@@ -269,7 +283,7 @@ cd /tmp/b && jira-cli issue download ABC-123    # → /tmp/b/jira-attachments/AB
 - 文本 / 日志：直接 Read；**超过几 MB 先 `grep -n` 定位行号再局部读**，别整个塞进上下文
 - 图片：Read 可以直接看
 - 压缩包：先 `unzip -l` / `7z l` 看清单，再解需要的那部分
-- 落点见 7.3——默认跟着当前工作目录走
+- 落点见 7.3——默认在固定的缓存目录，不跟当前目录走
 
 ### 7.6 上传附件
 

@@ -132,9 +132,11 @@
 }
 ```
 
-- `dir` 是本次的落点，**已解析成绝对路径**。不带 `--dir` 时是 `<当前工作目录>/jira-attachments/<KEY>/`——跟着当前目录走，不是固定位置。
+- `dir` 是本次落点，**已解析成绝对路径**。不带 `--dir` 时是固定的缓存目录 `~/.cache/jira-cli/attachments/<KEY>/`（macOS 在 `~/Library/Caches/` 下），**与当前工作目录无关**。
 - `path` 是每个文件的**本地绝对路径**，直接拿去 Read / grep，别自己拼。
-- 无匹配时返回 `downloaded: 0`、`files: []`，且**不带 `dir`**（没下载就没有落点），退出码仍为 0。
+- `downloaded` 是本次**新下载**的数量，`cached` 是复用本地缓存的数量，`total_size` 是本次全部文件的字节合计。每个文件还有 `cached: true/false`。
+- 同一 issue 上**允许存在同名附件**，这种情况下落盘名会插入 id 区分：`log.6056658.txt` / `log.6056751.txt`。
+- 无匹配时返回 `downloaded: 0`、`cached: 0`、`files: []`，且**不带 `dir`**，退出码仍为 0。
 
 ## issue create
 

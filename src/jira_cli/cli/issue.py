@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 import typer
 
+from ..config import default_download_dir
 from ..errors import JiraCliError, TransitionError
 from ..fields import (
     LIST_FIELDS,
@@ -455,33 +456,51 @@ def download_cmd(
     key: str = typer.Argument(..., help="issue key"),
     ids: Optional[list[str]] = typer.Option(None, "--id", help="只下载指定附件 id，可多次传"),
     match: Optional[str] = typer.Option(None, "--match", help="按文件名 glob 过滤，如 '*.log'"),
-    directory: Optional[Path] = typer.Option(None, "--dir", help="下载目录，默认 ./jira-attachments/<KEY>/"),
+    directory: Optional[Path] = typer.Option(None, "--dir", help="下载目录，默认 <缓存目录>/attachments/<KEY>/"),
+    force: bool = typer.Option(False, "--force", help="忽略本地缓存，强制重新下载"),
     fmt: str = FORMAT_OPTION,
 ) -> None:
     """下载附件到本地，输出本地绝对路径清单。
 
     Jira 的附件链接必须带认证头才能取，所以只能落盘，不能把裸链接交给调用方。
+
+    已经下过的文件（同路径且大小一致）默认跳过，输出里标 `cached: true`；
+    要重下加 --force。附件在 Jira 里是不可变的（改内容只能删了重传，会得到
+    新 id），所以「路径存在 + 大小一致」足以判定是同一个文件。
     """
     c = get_ctx(ctx)
     raw = c.backend.get_issue(key, fields=["attachment"])
-    attachments = (raw.get("fields") or {}).get("attachment") or []
+    all_attachments = (raw.get("fields") or {}).get("attachment") or []
 
+    selected = list(all_attachments)
     if ids:
         wanted = {str(i) for i in ids}
-        attachments = [a for a in attachments if str(a.get("id")) in wanted]
+        selected = [a for a in selected if str(a.get("id")) in wanted]
     if match:
-        attachments = [a for a in attachments if fnmatch.fnmatch(a.get("filename") or "", match)]
+        selected = [a for a in selected if fnmatch.fnmatch(a.get("filename") or "", match)]
 
-    if not attachments:
-        emit({"issue": key, "downloaded": 0, "files": []}, fmt if fmt != "table" else "yaml")
+    if not selected:
+        emit({"issue": key, "downloaded": 0, "cached": 0, "files": []}, fmt if fmt != "table" else "yaml")
         note("没有匹配的附件")
         return
 
-    target_dir = (directory or Path("jira-attachments") / key).resolve()
+    target_dir = _download_dir(c, key, directory)
+    # 落盘名基于**该 issue 的全部附件**判重，而不是本次筛选后的子集，
+    # 这样加不加 --match 得到的路径一致，缓存才命中得上
+    names = _dest_names(all_attachments)
+
     files = []
-    for att in attachments:
-        dest = target_dir / (att.get("filename") or f"attachment-{att.get('id')}")
-        size = c.backend.download_attachment(att["content"], dest)
+    fetched = reused = 0
+    for att in selected:
+        dest = target_dir / names[str(att["id"])]
+        size = att.get("size") or 0
+        if not force and dest.exists() and dest.stat().st_size == size:
+            reused += 1
+            cached = True
+        else:
+            size = c.backend.download_attachment(att["content"], dest)
+            fetched += 1
+            cached = False
         files.append(
             {
                 "id": att.get("id"),
@@ -489,11 +508,59 @@ def download_cmd(
                 "path": str(dest),
                 "size": size,
                 "mime": att.get("mimeType"),
+                "cached": cached,
             }
         )
 
+    if reused:
+        note(f"复用本地缓存 {reused} 个，新下载 {fetched} 个（加 --force 可强制重下）")
+
     emit(
-        {"issue": key, "dir": str(target_dir), "downloaded": len(files), "files": files},
+        {
+            "issue": key,
+            "dir": str(target_dir),
+            "downloaded": fetched,
+            "cached": reused,
+            "total_size": sum(f["size"] for f in files),
+            "files": files,
+        },
         fmt,
         rows=files,
     )
+
+
+def _download_dir(c: Any, key: str, directory: Optional[Path]) -> Path:
+    """决定落点。
+
+    --dir 给了就用它（平铺，不再套一层 KEY）；否则用配置的 download_dir
+    或缓存目录，并在其下按 issue key 分目录。
+    """
+    if directory:
+        return Path(directory).expanduser().resolve()
+    configured = (c.config.download_dir or "").strip()
+    root = Path(configured).expanduser() if configured else default_download_dir()
+    return (root / key).resolve()
+
+
+def _dest_names(attachments: list[dict]) -> dict[str, str]:
+    """{附件 id: 落盘文件名}。
+
+    **Jira 允许同一 issue 挂同名附件**（实测：两个 same-name.txt，
+    id 不同、大小不同）。直接用 filename 落盘会互相覆盖——报告下载 N 个，
+    磁盘上只有 1 个，且大小与报告对不上。同名的一律加 id 区分。
+    """
+    counts: dict[str, int] = {}
+    for att in attachments:
+        name = att.get("filename") or ""
+        counts[name] = counts.get(name, 0) + 1
+
+    out: dict[str, str] = {}
+    for att in attachments:
+        att_id = str(att.get("id"))
+        name = att.get("filename") or f"attachment-{att_id}"
+        if counts.get(name, 0) > 1:
+            stem = Path(name)
+            out[att_id] = f"{stem.stem}.{att_id}{stem.suffix}"
+        else:
+            out[att_id] = name
+    return out

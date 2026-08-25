@@ -67,6 +67,7 @@ jira-cli config set url https://jira.example.com
 jira-cli config set token <你的-PAT>
 jira-cli config set default-project ABC
 jira-cli config set timezone +08:00      # 时间戳换算时区，默认东八区
+jira-cli config set download-dir /data/jira-dl   # 附件落点根目录，默认 ~/.cache/jira-cli/attachments
 ```
 
 **PAT 获取**：Jira 页面右上角头像 →「个人设置」→「Personal Access Tokens」→ Create token。
@@ -128,7 +129,7 @@ jira-cli log -n 20
 - **`--project` 填 KEY 或名称都行**。项目 KEY（`ABC`）是 issue 编号 `ABC-123` 的前缀，是结构性标识；名称（`示例项目`）只是展示名、可随时改。Jira 的 JQL 接受名称但建单接口只认 KEY，本工具统一解析成 KEY，屏蔽这个不一致。
 - **先查 meta 再操作**。不确定项目/类型/状态/字段写法时，先 `jira-cli meta …`；建单必填字段用 `meta createmeta` 查。
 - **`me` 指当前 token 用户**，用于 `--assignee me`、`--reporter me`。
-- **附件必须下载才能读**。Jira 的附件链接要带认证头，直接给 AI 裸链接下不动；用 `issue download` 落盘后读本地路径。默认落到 **`<当前工作目录>/jira-attachments/<KEY>/`**（跟着当前目录走，不是固定位置），用 `--dir` 指定别处；输出里的 `dir` 和 `path` 都是绝对路径。
+- **附件必须下载才能读**。Jira 的附件链接要带认证头，直接给 AI 裸链接下不动；用 `issue download` 落盘后读本地路径。默认落到固定的缓存目录 **`~/.cache/jira-cli/attachments/<KEY>/`**（与当前目录无关，不会撒进代码仓库），`config set download-dir` 或 `--dir` 可改。**下载前自动检查本地缓存**，同路径同大小则跳过，`--force` 强制重下。
 
 ## 架构
 

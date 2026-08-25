@@ -44,12 +44,15 @@ if [ -e "$SKILL_ROOT/jira-cli" ]; then
   info "已移除 skill 正本 $SKILL_ROOT/jira-cli"
 fi
 
-# ---- 删除配置（含 PAT）----
+# ---- 删除配置（含 PAT）与缓存（含已下载的附件）----
 # 卸载即彻底清理，默认删除所有平台可能的配置目录。
 CONFIG_DIRS=(
   "${JIRA_CLI_CONFIG_DIR:-}"
   "$HOME/.config/jira-cli"                          # Linux
   "$HOME/Library/Application Support/jira-cli"      # macOS
+  "${JIRA_CLI_CACHE_DIR:-}"
+  "$HOME/.cache/jira-cli"                           # Linux（元数据缓存与下载的附件）
+  "$HOME/Library/Caches/jira-cli"                   # macOS
 )
 removed=0
 for d in "${CONFIG_DIRS[@]}"; do
