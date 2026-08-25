@@ -26,6 +26,7 @@ from ..fields import (
     issue_links,
     prune,
     summarize_issue,
+    to_jira_field,
 )
 from ..jql import JQL, normalize_user
 from ..meta_cache import cached
@@ -153,7 +154,8 @@ def show_cmd(
 
     expand = ["changelog"] if history else None
     if only:
-        wanted = [f.strip() for f in only.split(",") if f.strip()]
+        # --fields 收的是输出里的字段名，发给服务端前要翻回 Jira 的叫法
+        wanted = [to_jira_field(f.strip()) for f in only.split(",") if f.strip()]
     elif custom:
         # 自定义字段没法按名字点名要，只能全量拉回来再筛
         wanted = None

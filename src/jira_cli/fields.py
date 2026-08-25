@@ -42,6 +42,27 @@ SHOW_FIELDS = LIST_FIELDS + (
     "creator",
 )
 
+#: 输出字段名 -> Jira 字段名。只列**两者不同名**的。
+#:
+#: `--fields` 收的是用户在输出里看到的名字，但这个值还要发给服务端当
+#: `fields=` 用。两端不翻译的话，凡是改过名的字段都永远落空：传 `type`
+#: 服务端不认识，传 `issuetype` 又会被按输出名过滤掉——两种写法都拿不到。
+OUTPUT_TO_JIRA = {
+    "type": "issuetype",
+    "due": "duedate",
+    "fix_versions": "fixVersions",
+    "attachments": "attachment",
+    "assignee_display": "assignee",
+    "reporter_display": "reporter",
+    "links": "issuelinks",
+}
+
+
+def to_jira_field(name: str) -> str:
+    """输出字段名 -> 服务端认识的字段名。未收录的原样返回（自定义字段 id 走这条）。"""
+    return OUTPUT_TO_JIRA.get(name, name)
+
+
 #: 纯噪音字段：内部 URL、头像、渲染用的 id。对 AI 一律无价值
 NOISE_KEYS = frozenset(
     {
