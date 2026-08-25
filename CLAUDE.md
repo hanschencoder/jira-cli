@@ -1,0 +1,49 @@
+# jira-cli
+
+调用 Jira REST API 查询/创建/更新 issue、下载附件的命令行工具，配套指导 LLM 使用的 skill。
+
+设计文档：`docs/superpowers/specs/2026-08-25-jira-cli-design.md`（决策与实测证据都在里面，改架构前先读）。
+
+## 命令
+
+```bash
+# 开发模式：uv pip install -e .    运行：uv run jira-cli <子命令>（或 .venv/bin/jira-cli）
+# 冒烟测试：连真实 Jira，先指向临时配置目录避免污染本机配置
+export JIRA_CLI_CONFIG_DIR=/tmp/jiratest && uv run jira-cli meta whoami -o yaml
+```
+
+无自动化测试（本项目约定不写 TDD），靠连真实 Jira 冒烟验证。**写操作冒烟只在 Demo 性质的项目上做，不碰生产项目**——Jira 写操作直接进生产、会真的发通知，无法静默撤销。
+
+## 目标实例（已实测，勿凭 Jira 通用知识臆断）
+
+- `https://jira.example.com/`，**Jira Server 8.20.11**，`deploymentType: "Server"`
+- **REST API v2**（Server 没有 v3，别写 `/rest/api/3/`）
+- 认证走 **PAT / Bearer**（`Authorization: Bearer <token>`），实例已启用
+- `description` 字段确认走 **Wiki Style Renderer**（原始 `*粗*` 渲染成 `<b>`、`|a|b|` 渲染成 `<table>`）
+- 规模参考：14 个可访问项目，11.7 万条有描述的 issue
+
+## 架构
+
+- `client.py` 用 **requests 直接封装** Jira REST v2（非 `jira` 官方库），自管鉴权/分页/错误展开
+- **Cloud 支持只做架构预留，本期不实现**。差异收敛在两个抽象里：`client.Backend`（端点版本、用户身份模型、分页参数）和 `markup.Codec`（wiki/ADF）。加 Cloud = 新增 `CloudBackend` + `AdfCodec` 两个文件，不动其余代码
+- `markup/` 正文转换：**读**用 `jira2markdown` 库（wiki→md），**写**用 `markdown-it-py` 出 AST + 自写 `JiraWikiRenderer`（md→wiki）
+- `jql.py` 链式 JQL builder；封装参数与 `--jql` 汇入同一 builder（后者走 `.raw()`），不是两套代码
+- `fields.py` 字段白名单裁剪/展平/名称→id 解析；`output.py` yaml/json/table/md；`meta_cache.py` 元数据缓存
+- `config.py` 配置加载（命令行 > 环境变量 `JIRA_URL`/`JIRA_TOKEN` > 配置文件，无多 profile）
+- `writelog.py` 写操作 JSONL 留痕；`errors.py` Jira 错误 → 可自我修复的提示
+- `cli/` typer 命令层：`issue` / `meta` / `config` / `log`，入口 `cli/__init__.py:app`。**该层不含业务逻辑**，只做参数解析与调用编排
+
+## 约定与踩坑
+
+- **不做 TUI**。`rich` 只用于渲染静态表格和彩色错误，不要引入任何交互式界面。参考项目 `ankitpokhrel/jira-cli` 是 TUI-first 的，别照抄它的输出层
+- **不做批量写**：`issue update` / `transition` / `comment` 只接受单个 issue key。**不做 dry-run**。护栏只有写操作留痕
+- **不做统计（stats）、不做敏捷（board/sprint/epic）**
+- **Jira 不能直接「设置状态」**，必须走 transition。`issue transition <KEY> <状态名>` 按名称模糊匹配 transition id；匹配失败或缺必填字段时，错误信息必须**列出当前可用的全部 transition 及其必填字段和可选值**——让 AI 一轮自我纠正，别只报「失败」
+- **md→wiki 绝不用正则替换**。必须走 Markdown AST + renderer。正则会在嵌套列表、表格内联代码、元字符转义上翻车。参考 `ankitpokhrel/jira-cli` 源码注释：`'*' can be either be bold or an unordered list`
+- **正文中的 wiki 元字符（`{} [] | * _ - + ^ ~`）必须转义**，否则 AI 写的普通文本会被误解析成标记
+- 转换器有逃生舱：`--description-raw` / `--body-raw` 直接提交 wiki 原文
+- **用户身份模型**：Server 用 `user.name`（登录名，如 `zhang.san`），Cloud 用 `user.accountId`。写 `Backend` 抽象时这是真正的语义差异，不是换个端点
+- **输出必须省 token**：`/search` 带 `fields=` 白名单从源头裁剪；输出展平嵌套对象、剔除 `null` 和 `self`/`avatarUrls`/`iconUrl` 等内部 URL；`issue show` 默认精简，`--comments`/`--history`/`--links`/`--subtasks` 按需叠加
+- **附件必须落盘**：Jira Server 的附件 `content` URL 要带认证头，AI 拿裸链接下不动。下载后输出**本地绝对路径**清单
+- `config.toml` 含 PAT，权限 600，已在 `.gitignore`；测试务必用 `JIRA_CLI_CONFIG_DIR` 隔离
+- `comment` 字段的渲染器未实测确认（采样到的评论都是纯文本无从判别），按 wiki 处理，由 `config init` 运行时探测兜底
