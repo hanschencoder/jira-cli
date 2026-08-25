@@ -19,9 +19,10 @@
 
 ## 2. 目标实例（已实测确认）
 
+实例地址与凭据只存在于本地配置，不入库。下表是实测得到的行为结论：
+
 | 项 | 值 | 确认方式 |
 |---|---|---|
-| URL | `https://jira.example.com/` | — |
 | 部署类型 | **Server**（非 Cloud/DC） | `GET /rest/api/2/serverInfo` → `deploymentType: "Server"` |
 | 版本 | 8.20.11（buildNumber 820011, 2022-07-19） | 同上 |
 | API 版本 | **v2**（Server 无 v3） | — |

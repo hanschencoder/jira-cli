@@ -16,7 +16,9 @@ export JIRA_CLI_CONFIG_DIR=/tmp/jiratest && uv run jira-cli meta whoami -o yaml
 
 ## 目标实例（已实测，勿凭 Jira 通用知识臆断）
 
-- `https://jira.example.com/`，**Jira Server 8.20.11**，`deploymentType: "Server"`
+实例地址与 PAT 只存在于本地配置（`~/.config/jira-cli/config.toml`），不入库。下面是实测得到的**行为结论**：
+
+- **Jira Server 8.20.11**，`deploymentType: "Server"`
 - **REST API v2**（Server 没有 v3，别写 `/rest/api/3/`）
 - 认证走 **PAT / Bearer**（`Authorization: Bearer <token>`），实例已启用
 - `description` 字段确认走 **Wiki Style Renderer**（原始 `*粗*` 渲染成 `<b>`、`|a|b|` 渲染成 `<table>`）
