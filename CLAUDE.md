@@ -42,7 +42,7 @@ export JIRA_CLI_CONFIG_DIR=/tmp/jiratest && uv run jira-cli meta whoami -o yaml
 - **流转带评论必须单独发一次评论请求**，不要塞进 transition 的 `update.comment`。实测：该 transition 的界面若没配「评论」字段，Jira **返回成功但静默丢弃评论**，不报任何错。静默失败对调用方最致命，宁可多一次请求
 - **md→wiki 绝不用正则替换**。必须走 Markdown AST + renderer。正则会在嵌套列表、表格内联代码、元字符转义上翻车。参考 `ankitpokhrel/jira-cli` 源码注释：`'*' can be either be bold or an unordered list`
 - **正文中的 wiki 元字符（`{} [] | * _ - + ^ ~`）必须转义**，否则 AI 写的普通文本会被误解析成标记
-- 转换器有逃生舱：`--description-raw` / `--body-raw` 直接提交 wiki 原文
+- 转换器有逃生舱：`--description-raw`（建单/更新）与 `--raw`（评论） 直接提交 wiki 原文
 - **用户身份模型**：Server 用 `user.name`（登录名，如 `zhang.san`），Cloud 用 `user.accountId`。写 `Backend` 抽象时这是真正的语义差异，不是换个端点
 - **输出必须省 token**：`/search` 带 `fields=` 白名单从源头裁剪；输出展平嵌套对象、剔除 `null` 和 `self`/`avatarUrls`/`iconUrl` 等内部 URL；`issue show` 默认精简，`--comments`/`--history`/`--links`/`--subtasks` 按需叠加
 - **附件必须落盘**：Jira Server 的附件 `content` URL 要带认证头，AI 拿裸链接下不动。下载后输出**本地绝对路径**清单

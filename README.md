@@ -4,8 +4,6 @@
 
 适配 **Jira Server / Data Center**（REST API v2）。
 
-> 🚧 开发中，功能尚未实现。设计文档见 `docs/superpowers/specs/2026-08-25-jira-cli-design.md`。
-
 ## 为什么不用现成的
 
 [`ankitpokhrel/jira-cli`](https://github.com/ankitpokhrel/jira-cli) 是很成熟的项目，但它服务的是「终端前的人 + shell 脚本」：默认交互式表格，`--plain` 输出给 `awk` 切列的定宽文本，`--raw` 是**未经任何过滤的原始 Jira JSON**（单个 issue 常 50KB+）。没有 YAML、没有字段裁剪、没有附件下载能力。
@@ -95,7 +93,12 @@ jira-cli issue show ABC-123 --raw            # 原始 JSON 逃生舱
 
 # 创建（描述写 Markdown，自动转 wiki markup）
 jira-cli issue create --project ABC --type 任务 \
-  --summary "标题" --description "## 复现步骤\n1. …" -a screencap.png
+  --summary "标题" \
+  --description '## 复现步骤
+
+1. 打开设置页
+2. 点击同步' \
+  --attach screencap.png
 
 # 更新 / 评论 / 流转状态（均为单个 issue，不支持批量）
 jira-cli issue update ABC-123 --assignee zhang.san -f priority=High
@@ -117,7 +120,7 @@ jira-cli log -n 20
 
 ## 重要约定
 
-- **正文统一用 Markdown**。读出来是 Markdown，写进去也传 Markdown，工具内部与 Jira wiki markup 双向转换。转换器出边界情况时，用 `--description-raw` / `--body-raw` 直接传 wiki 原文。
+- **正文统一用 Markdown**。读出来是 Markdown，写进去也传 Markdown，工具内部与 Jira wiki markup 双向转换。转换器出边界情况时，用 `--description-raw`（建单/更新）与 `--raw`（评论） 直接传 wiki 原文。
 - **Jira 不能直接「设置状态」**，必须走 transition。`issue transition <KEY> <状态名>` 按名称匹配；匹配不上或缺必填字段时，错误信息会列出当前可用的全部 transition 及其必填字段和可选值。
 - **写操作不支持批量、不支持 dry-run**。`update` / `transition` / `comment` 一次只接受一个 issue key。所有写操作记入本地留痕日志，`jira-cli log` 可回查。
 - **先查 meta 再操作**。不确定项目/类型/状态/字段写法时，先 `jira-cli meta …`；建单必填字段用 `meta createmeta` 查。

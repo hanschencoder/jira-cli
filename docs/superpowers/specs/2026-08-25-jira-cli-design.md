@@ -141,7 +141,7 @@ PyPI 上的 `md2jira` 已评估并**排除**：质量差，且硬钉 `mistletoe>
 
 **转义**：正文中出现的 wiki 元字符（`{} [] | * _ - + ^ ~`）需转义，避免 AI 写的普通文本被误解析成标记。
 
-**逃生舱**：`--description-raw` / `--body-raw` 直接提交 wiki 原文，绕过转换器。转换器出边界情况时不阻塞流程。
+**逃生舱**：`--description-raw`（建单/更新）与 `--raw`（评论） 直接提交 wiki 原文，绕过转换器。转换器出边界情况时不阻塞流程。
 
 ### 4.4 查询：单一 JQL builder，双入口
 
@@ -236,8 +236,8 @@ jira-cli
   issue
     list        --project/--assignee/--status/--type/--updated/… 或 --jql
     show        <KEY> [--comments --history --links --subtasks --fields a,b --raw]
-    create      --project --type --summary --description [-f name=value] [-a 文件]
-    update      <KEY> [--summary --assignee --priority -f name=value] [-a 文件]
+    create      --project --type --summary --description [-f name=value] [--attach 文件]
+    update      <KEY> [--summary --assignee --priority -f name=value] [--attach 文件]
     comment     <KEY> "正文"
     comments    <KEY>
     transition  <KEY> "已完成" [-f resolution=Done]
@@ -310,7 +310,7 @@ install/uninstall 脚本完整复制 redmine-cli 的方案。git 远端地址待
 
 | 风险 | 缓解 |
 |---|---|
-| Markdown → wiki 转换器边界情况 | 用真 AST 解析而非正则；提供 `--description-raw` / `--body-raw` 逃生舱 |
+| Markdown → wiki 转换器边界情况 | 用真 AST 解析而非正则；提供 `--description-raw`（建单/更新）与 `--raw`（评论） 逃生舱 |
 | `comment` 字段渲染器未实测确认 | codec 抽象 + `config init` 运行时探测，兜底按 wiki |
 | `jira2markdown` 对本实例的 wiki 方言覆盖不全 | `issue show --raw` 可拿原始 wiki 文本 |
 | 无自动化测试，转换器回归靠人盯 | 冒烟脚本覆盖典型正文样本 |
