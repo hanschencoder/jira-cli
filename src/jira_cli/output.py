@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from typing import Any, Iterable, Sequence
 
@@ -19,6 +20,9 @@ from rich.table import Table
 
 FORMATS = ("table", "yaml", "json", "md")
 DEFAULT_FORMAT = "table"
+
+#: 这些列承载长文本，表格里让它们吃掉剩余宽度
+_WIDE_COLUMNS = frozenset({"summary", "description", "name", "body", "path", "filename", "取值"})
 
 # stdout 给数据，stderr 给诊断信息，两者不能混
 _out = Console(file=sys.stdout, soft_wrap=True)
@@ -49,16 +53,29 @@ def to_json(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-def _stringify(value: Any) -> str:
+#: Jira 的时间戳形如 2026-08-25T14:24:42.000+0800，表格里显示全量会把其它列挤没
+_ISO_TS = re.compile(r"^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}")
+
+
+def _stringify(value: Any, *, compact: bool = False) -> str:
+    """compact=True 用于表格/md 视图：缩短时间戳等纯展示性内容。
+
+    yaml/json 不走这里，始终保留完整精度。
+    """
     if value is None:
         return ""
     if isinstance(value, bool):
         return "是" if value else "否"
     if isinstance(value, (list, tuple)):
-        return ", ".join(_stringify(v) for v in value)
+        return ", ".join(_stringify(v, compact=compact) for v in value)
     if isinstance(value, dict):
         return json.dumps(value, ensure_ascii=False)
-    return str(value)
+    text = str(value)
+    if compact:
+        matched = _ISO_TS.match(text)
+        if matched:
+            return f"{matched.group(1)} {matched.group(2)}"
+    return text
 
 
 def _columns_of(rows: Sequence[dict]) -> list[str]:
@@ -80,7 +97,10 @@ def to_md(rows: Sequence[dict], columns: Sequence[str] | None = None) -> str:
         "| " + " | ".join("---" for _ in cols) + " |",
     ]
     for row in rows:
-        cells = [_stringify(row.get(c)).replace("|", "\\|").replace("\n", " ") for c in cols]
+        cells = [
+            _stringify(row.get(c), compact=True).replace("|", "\\|").replace("\n", " ")
+            for c in cols
+        ]
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
@@ -90,11 +110,16 @@ def _print_table(rows: Sequence[dict], columns: Sequence[str] | None = None) -> 
         _out.print("（无结果）")
         return
     cols = list(columns) if columns else _columns_of(rows)
-    table = Table(show_header=True, header_style="bold", show_lines=False)
+    table = Table(show_header=True, header_style="bold", show_lines=False, pad_edge=False)
     for col in cols:
-        table.add_column(col, overflow="fold")
+        # 标题类长文本列让它占据剩余宽度，标识/枚举类列不折行，
+        # 否则窄终端下每列都折行会把表格挤成面条
+        if col in _WIDE_COLUMNS:
+            table.add_column(col, overflow="fold", ratio=3, min_width=20)
+        else:
+            table.add_column(col, overflow="ellipsis", no_wrap=True)
     for row in rows:
-        table.add_row(*[_stringify(row.get(c)).replace("\n", " ") for c in cols])
+        table.add_row(*[_stringify(row.get(c), compact=True).replace("\n", " ") for c in cols])
     _out.print(table)
 
 

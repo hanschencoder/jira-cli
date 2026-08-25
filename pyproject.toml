@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-jira-cli = "jira_cli.cli:app"
+jira-cli = "jira_cli.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -312,3 +312,50 @@ def resolve_one(
         f"找不到{kind}：{value}{extra}",
         f"可选值：{available}" if available else f"当前没有可用的{kind}。",
     )
+
+
+def build_schema_map(fields: Iterable[dict]) -> dict[str, dict]:
+    """{field_id: schema}，用于把 -f 的字符串取值适配成 Jira 要的结构。"""
+    return {f["id"]: (f.get("schema") or {}) for f in fields if f.get("id")}
+
+
+#: 这些标准字段的取值要包成 {"name": ...}
+_NAME_WRAPPED = {"priority", "resolution", "issuetype", "status", "assignee", "reporter", "parent"}
+
+
+def coerce_value(field_id: str, value: str, schema: dict | None = None) -> Any:
+    """把命令行来的字符串适配成 Jira 字段要的结构。
+
+    Jira 的字段取值结构随类型变化很大：下拉框要 {"value": x}，
+    用户字段要 {"name": x}，多选要数组。类型判错会得到一个没有指向性的
+    400，所以宁可按 schema 精确适配。
+    """
+    schema = schema or {}
+    stype = schema.get("type")
+
+    if stype == "array":
+        items = [v.strip() for v in value.split(",") if v.strip()]
+        item_type = schema.get("items")
+        if item_type in ("string", None):
+            return items
+        if item_type == "option":
+            return [{"value": v} for v in items]
+        return [{"name": v} for v in items]
+
+    if stype == "option":
+        return {"value": value}
+    if stype in ("user", "priority", "resolution", "issuetype", "status", "project"):
+        return {"name": value}
+    if stype == "number":
+        try:
+            return float(value) if "." in value else int(value)
+        except ValueError:
+            return value
+    if stype in ("date", "datetime", "string", None):
+        # 没有 schema 信息时，按标准字段名兜底判断
+        if field_id in _NAME_WRAPPED:
+            return {"name": value}
+        if field_id == "labels":
+            return [v.strip() for v in value.split(",") if v.strip()]
+        return value
+    return value
