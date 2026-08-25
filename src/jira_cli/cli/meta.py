@@ -172,7 +172,11 @@ def createmeta_cmd(
     required_only: bool = typer.Option(True, "--required-only/--all", help="只列必填字段"),
     fmt: str = FORMAT_OPTION,
 ) -> None:
-    """建单时可填/必填的字段及其可选值。建 issue 前先查这个。"""
+    """建单时可填/必填的字段及其可选值。建 issue 前先查这个。
+
+    --project 填项目 key 或名称都行，内部统一解析成 key——createmeta
+    只认 key，拿到名称会静默返回空列表。
+    """
     c = get_ctx(ctx)
     project = c.project_or_default(project)
     if not project:

@@ -11,6 +11,7 @@ from ..client import ServerBackend, detect_deployment
 from ..config import Config, load_file, normalize_key, save_file
 from ..config import load as load_config
 from ..errors import JiraCliError
+from ..fields import resolve_one
 from ..output import FORMATS, emit, note
 from .common import FORMAT_OPTION, get_ctx
 
@@ -105,13 +106,31 @@ def init_cmd(
     default_project = str(existing.get("default_project") or "")
     if projects:
         note(f"可访问项目 {len(projects)} 个：")
+        note(f"  {'KEY':<16}名称")
         for item in projects[:40]:
             note(f"  {item.get('key'):<16}{item.get('name')}")
-        default_project = typer.prompt(
-            "默认项目 key（留空则每条命令都要显式指定 --project）",
-            default=default_project,
-            show_default=bool(default_project),
-        ).strip()
+        # key 和名称都收，内部统一存 key——建单接口只认 key
+        for _ in range(3):
+            answer = typer.prompt(
+                "默认项目（填 KEY 或名称均可，留空则每条命令都要显式指定 --project）",
+                default=default_project,
+                show_default=bool(default_project),
+            ).strip()
+            if not answer:
+                default_project = ""
+                break
+            try:
+                default_project = resolve_one(
+                    projects, answer, "项目", keys=("key", "name")
+                )["key"]
+            except JiraCliError as exc:
+                note(str(exc.message))
+                continue
+            if default_project != answer:
+                note(f"「{answer}」已解析为项目 KEY：{default_project}")
+            break
+        else:
+            raise JiraCliError("多次未能识别项目，请重新运行 jira-cli config init")
 
     path = save_file(
         {

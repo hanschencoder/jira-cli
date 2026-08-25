@@ -13,9 +13,11 @@ from ..client import Backend, build_backend
 from ..config import Config
 from ..config import load as load_config
 from ..errors import JiraCliError
-from ..fields import build_field_map, reverse_field_map
+from ..fields import build_field_map, resolve_one, reverse_field_map
+from ..errors import ResolveError
 from ..markup import Codec, get_codec
 from ..meta_cache import cached
+from ..output import note
 
 #: -o 的取值。声明在各子命令上，因此可以后置在命令末尾
 FORMAT_OPTION = typer.Option(
@@ -62,8 +64,33 @@ class Ctx:
             self._rev_field_map = reverse_field_map(self._fields())
         return self._rev_field_map
 
+    def resolve_project(self, value: Optional[str]) -> Optional[str]:
+        """把项目 key / 名称 / id 统一解析成 key。
+
+        必须归一化：JQL 的 project 字段接受名称，但 /issue（建单）和
+        /issue/createmeta 只认 key——createmeta 拿到名称时**静默返回空列表**
+        而不报错，看起来像「该项目没有 issue 类型」。两列都能填、内部统一
+        转成 key，才不会让人在这上面栽跟头。
+        """
+        if not value:
+            return None
+        projects = cached("projects", self.backend.projects)
+        try:
+            item = resolve_one(projects, value, "项目", keys=("key", "name"))
+        except ResolveError as exc:
+            # 只列 KEY 对「只记得项目名」的人没用，两列都给
+            listing = "\n".join(
+                f"  {p.get('key'):<16}{p.get('name')}" for p in projects
+            )
+            raise ResolveError(exc.message, f"可选项目：\n{listing}") from exc
+        key = item["key"]
+        if key.lower() != value.strip().lower():
+            # 名称或前缀匹配上了，说清楚落到了哪个项目，别静默替换
+            note(f"项目「{value}」→ {key}（{item.get('name')}）")
+        return key
+
     def project_or_default(self, project: Optional[str]) -> Optional[str]:
-        return project or self.config.default_project or None
+        return self.resolve_project(project or self.config.default_project or None)
 
     def issue_url(self, key: str) -> str:
         return f"{self.config.base_url}/browse/{key}"

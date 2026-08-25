@@ -123,6 +123,7 @@ jira-cli log -n 20
 - **正文统一用 Markdown**。读出来是 Markdown，写进去也传 Markdown，工具内部与 Jira wiki markup 双向转换。转换器出边界情况时，用 `--description-raw`（建单/更新）与 `--raw`（评论） 直接传 wiki 原文。
 - **Jira 不能直接「设置状态」**，必须走 transition。`issue transition <KEY> <状态名>` 按名称匹配；匹配不上或缺必填字段时，错误信息会列出当前可用的全部 transition 及其必填字段和可选值。
 - **写操作不支持批量、不支持 dry-run**。`update` / `transition` / `comment` 一次只接受一个 issue key。所有写操作记入本地留痕日志，`jira-cli log` 可回查。
+- **`--project` 填 KEY 或名称都行**。项目 KEY（`ABC`）是 issue 编号 `ABC-123` 的前缀，是结构性标识；名称（`示例项目`）只是展示名、可随时改。Jira 的 JQL 接受名称但建单接口只认 KEY，本工具统一解析成 KEY，屏蔽这个不一致。
 - **先查 meta 再操作**。不确定项目/类型/状态/字段写法时，先 `jira-cli meta …`；建单必填字段用 `meta createmeta` 查。
 - **`me` 指当前 token 用户**，用于 `--assignee me`、`--reporter me`。
 - **附件必须下载才能读**。Jira 的附件链接要带认证头，直接给 AI 裸链接下不动；用 `issue download` 落盘后读本地路径。

@@ -52,6 +52,7 @@ jira-cli issue show ABC-1 -o json | jq -r '.description'
 ## 2. 核心铁律
 
 1. **先查 meta 再操作**。不确定项目 / 类型 / 状态 / 字段 / 用户的写法时，先跑对应的 `jira-cli meta ...`。建 issue 前必须先 `meta createmeta` 查必填字段。
+   - 项目有 **KEY**（`ABC`，issue 编号 `ABC-123` 的前缀，结构性标识）和**名称**（`示例项目`，展示用、可改名）之分。`--project` 两者都收，但**回填给用户看时用 KEY**，它才是稳定的。
 2. **Jira 不能直接「设置状态」**，必须走工作流定义的 transition。用 `issue transition`，不要试图 `issue update -f status=...`。
 3. **写操作不可批量、不可撤销**。`update` / `transition` / `comment` 一次只接受**一个** issue key。写操作直接进生产、会真的发通知。
 4. **正文一律写 Markdown**。工具自动转成 Jira wiki markup，不要自己写 wiki 语法。
@@ -90,7 +91,7 @@ jira-cli issue show ABC-1 -o json | jq -r '.description'
 
 ## 4. 筛选参数（`issue list`）
 
-- `--project` / `-p` 项目 key，不给则用配置里的 `default-project`
+- `--project` / `-p` 项目 **KEY 或名称均可**（如 `ABC` 或 `示例项目`），内部统一解析成 key；不给则用配置里的 `default-project`。用名称或前缀匹配上时会在 stderr 说明落到了哪个项目
 - `--assignee` / `-a` 经办人**登录名**（不是显示名），`me` 表示自己。登录名用 `meta users` 查
 - `--reporter` 报告人，同上
 - `--status` / `-s` 状态名；`open` / `closed` 是简写（映射到 `statusCategory`），`*` 表示不过滤
