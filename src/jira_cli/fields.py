@@ -258,6 +258,39 @@ def issue_links(fields: dict) -> list[dict]:
     return rows
 
 
+def _chain_within_group(group: list[dict]) -> list[dict]:
+    """同一时间戳、同一字段的多条变更，按 from/to 首尾相接还原真实顺序。
+
+    Jira 返回的顺序按 changelog id，而**多节点部署下 id 按块预分配，
+    全局不保证与时间同序**——同一秒内发生的两次流转可能被倒过来给，
+    读起来就成了 To Do → Done → In progress 这种不可能的时间线。
+
+    链条唯一时才重排；有歧义（分叉、成环、缺端点）就保持原样，不猜。
+    """
+    if len(group) < 2:
+        return group
+    by_from = {}
+    for row in group:
+        key = row.get("from")
+        if key in by_from:  # 同一个起点有多条，无法确定唯一链条
+            return group
+        by_from[key] = row
+
+    tos = {row.get("to") for row in group}
+    starts = [row for row in group if row.get("from") not in tos]
+    if len(starts) != 1:
+        return group
+
+    ordered = []
+    cursor = starts[0]
+    seen = set()
+    while cursor is not None and id(cursor) not in seen:
+        seen.add(id(cursor))
+        ordered.append(cursor)
+        cursor = by_from.get(cursor.get("to"))
+    return ordered if len(ordered) == len(group) else group
+
+
 def changelog_rows(raw: dict) -> list[dict]:
     """变更历史展平成一行一次字段变更，最早的在前。
 
@@ -272,25 +305,41 @@ def changelog_rows(raw: dict) -> list[dict]:
     if created_at:
         opener = user_name(fields.get("creator")) or user_name(fields.get("reporter"))
         rows.append(
-            prune({"at": format_ts(created_at), "who": opener, "field": "created", "to": raw.get("key")})
+            {"at": format_ts(created_at), "who": opener, "field": "created", "to": raw.get("key")}
         )
 
+    changes: list[dict] = []
     for entry in ((raw.get("changelog") or {}).get("histories") or []):
         author = user_name(entry.get("author"))
-        at = entry.get("created")
+        at = format_ts(entry.get("created"))
         for item in entry.get("items") or []:
-            rows.append(
-                prune(
-                    {
-                        "at": format_ts(at),
-                        "who": author,
-                        "field": item.get("field"),
-                        "from": item.get("fromString"),
-                        "to": item.get("toString"),
-                    }
-                )
+            changes.append(
+                {
+                    "at": at,
+                    "who": author,
+                    "field": item.get("field"),
+                    "from": item.get("fromString"),
+                    "to": item.get("toString"),
+                }
             )
-    return rows
+
+    # 先按时间稳定排序，再在「同时间戳 + 同字段」的组内还原真实顺序
+    changes.sort(key=lambda r: r["at"] or "")
+    ordered: list[dict] = []
+    index = 0
+    while index < len(changes):
+        end = index + 1
+        while (
+            end < len(changes)
+            and changes[end]["at"] == changes[index]["at"]
+            and changes[end]["field"] == changes[index]["field"]
+        ):
+            end += 1
+        ordered.extend(_chain_within_group(changes[index:end]))
+        index = end
+
+    rows.extend(ordered)
+    return [prune(row) for row in rows]
 
 
 # ---------------------------------------------------------------- 名称解析

@@ -96,6 +96,8 @@
 - 第一条 `field: "created"` 是**本工具合成**的创建事件。Jira 的 changelog 只记录*变更*、不含创建，直接输出会缺时间线的第一格。`who` 取 `creator`，取不到则退到 `reporter`。
 - **`from` / `to` 缺失表示那一侧为空**：只有 `to` = 从无到有（如首次指派），只有 `from` = 被清空（如上例中 resolution 被清掉）。这是全局「null 不输出」约定的延续。
 - 一次操作可能产生多行：一次状态流转常同时改 `status` 和 `resolution`，它们的 `at` 相同。
+- `field` 用的是 Jira 的字段名：`status` / `assignee` / `priority` / `resolution` / `summary` / `description` / `Attachment` / `Link` 等；自定义字段用其显示名。
+- 同一秒内的同字段变更已按 `from`/`to` 首尾相接还原为真实顺序（Jira 自身的返回顺序在多节点部署下可能是乱的）。
 
 ### links
 

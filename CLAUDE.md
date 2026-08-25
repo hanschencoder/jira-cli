@@ -48,6 +48,7 @@ export JIRA_CLI_CONFIG_DIR=/tmp/jiratest && uv run jira-cli meta whoami -o yaml
 - **正文中的 wiki 元字符（`{} [] | * _ - + ^ ~`）必须转义**，否则 AI 写的普通文本会被误解析成标记
 - 转换器有逃生舱：`--description-raw`（建单/更新）与 `--raw`（评论） 直接提交 wiki 原文
 - **用户身份模型**：Server 用 `user.name`（登录名，如 `zhang.san`），Cloud 用 `user.accountId`。写 `Backend` 抽象时这是真正的语义差异，不是换个端点
+- **changelog 的 id 不保证与时间同序**。该实例是多节点部署（响应头 `X-ANODEID`），各节点按块预分配 id，同一秒内发生的两次流转可能被倒序返回，读出来是「To Do → Done → In progress」这种不可能的时间线。`_chain_within_group` 在「同时间戳 + 同字段」组内按 from/to 首尾相接还原真实顺序；链条有歧义（分叉/成环/缺端点）就保持原样不猜
 - **Jira 的 changelog 不含创建事件**，只记录变更。`changelog_rows` 会用 `fields.created` + `creator`/`reporter` 合成一条 `field: created` 补上时间线第一格，否则看不出这条 issue 是谁开的
 - **时间戳统一格式化**：Jira 返回 `2026-08-25T11:31:57.000+0800`（带 T、偏移不带冒号，Python 3.10 的 `fromisoformat` 不认），对外统一成 `2026-08-25 11:31:57.000` 并换算到配置时区（默认 `+08:00`，`timezone` 配置项 / `JIRA_TZ` 环境变量可改）。**毫秒按源数据实际有什么显示什么**，源里没有就不补 `.000`。时区是进程级设置，由 `Ctx.__init__` 调 `timefmt.set_timezone()` 配一次
 - **自定义字段默认不输出**。该实例一条 issue 挂 60+ 个自定义字段，其中绝大多数是**建单时预填的模板占位符**（`【前提条件】：`、`Please fill in the template below.`）而非有人写的内容，还混着插件塞的 Java 对象 toString。全吐出来是 4600 字符 vs 精简后 365 字符。要看时用 `issue show --custom`
